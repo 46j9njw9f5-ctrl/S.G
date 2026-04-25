@@ -273,7 +273,7 @@ def validate_question(item: dict[str, Any], job: dict[str, Any]) -> tuple[bool, 
 
 def review_question(item: dict[str, Any], reviewer_model: str | None, timeout_seconds: int) -> tuple[bool, int, str]:
     if not reviewer_model:
-        return True, 75, "review skipped"
+        return False, 0, "review model required"
     prompt = REVIEW_PROMPT + "\n\n" + json.dumps(item, ensure_ascii=False, indent=2)
     result = ollama_chat(reviewer_model, prompt, review_schema(), timeout_seconds=timeout_seconds)
     accepted = bool(result["accepted"]) and int(result["score"]) >= 75

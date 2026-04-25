@@ -23,6 +23,8 @@ STATE_FILE = DATA_DIR / "supervisor_state.json"
 QUESTION_LIGHT_MODEL = "qwen3:4b"
 QUESTION_HEAVY_MODEL = "qwen2-math:7b"
 MATERIAL_MODEL = "qwen3:4b"
+QUESTION_REVIEWER_MODEL = "qwen3:4b"
+MATERIAL_REVIEWER_MODEL = "qwen3:4b"
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -186,7 +188,7 @@ def run_profile(profile: Profile) -> None:
     if profile.worker == "question":
         run_question_cycle(
             generator_model=profile.model,
-            reviewer_model=None,
+            reviewer_model=QUESTION_REVIEWER_MODEL,
             idle_threshold=0,
             sleep_seconds=0,
             timeout_seconds=profile.timeout_seconds,
@@ -196,7 +198,7 @@ def run_profile(profile: Profile) -> None:
         return
     run_material_cycle(
         generator_model=profile.model,
-        reviewer_model=None,
+        reviewer_model=MATERIAL_REVIEWER_MODEL,
         idle_threshold=0,
         sleep_seconds=0,
         timeout_seconds=profile.timeout_seconds,

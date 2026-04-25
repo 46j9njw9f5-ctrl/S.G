@@ -32,6 +32,8 @@ MATERIAL_PROMPT = """あなたは高校数学の教材編集者です。
 - 続けて、その単元の練習問題ブロックを1つ作る
 - 数学的に正確
 - 市販教材の本文を模倣しない
+- 途中式や計算根拠を省略しない
+- 解説は「なぜそうするか」が伝わるようにする
 - JSONのみ返す
 
 textbook は次を返す:
@@ -45,6 +47,9 @@ textbook は次を返す:
 - example_steps (2-4個)
 - common_mistakes (2-4個)
 - quick_check (2-4個)
+- example_steps は4-6個にする
+- example_steps には実際の計算結果を含める
+- overview は80字以上120字以内を目安にする
 
 practice は次を返す:
 - course
@@ -55,6 +60,8 @@ practice は次を返す:
 - standard_questions (1個)
 - answers (3個)
 - answer_notes (3個)
+- answer_notes は各20字以上で、途中計算か判断根拠を含める
+- answer と answer_notes の内容は一致させる
 """
 
 
@@ -69,6 +76,8 @@ MATERIAL_REVIEW_PROMPT = """あなたは高校数学教材の査読者です。
 - スマホでの読みやすさ
 - 単元と focus への一致
 - そのまま教科書や問題集に入れられる自然さ
+- 途中式と計算根拠の十分さ
+- answer と answer_notes の整合性
 """
 
 
@@ -258,18 +267,29 @@ def validate_material(result: dict[str, Any], job: dict[str, Any]) -> tuple[bool
             return False, "course/unit mismatch"
     if len(textbook.get("core_points", [])) < 3:
         return False, "textbook core_points too short"
+    if len(textbook.get("example_steps", [])) < 4:
+        return False, "textbook example_steps too short"
+    if len(str(textbook.get("overview", "")).strip()) < 45:
+        return False, "textbook overview too short"
     if len(practice.get("basic_questions", [])) != 2:
         return False, "practice basic_questions must be 2"
     if len(practice.get("standard_questions", [])) != 1:
         return False, "practice standard_questions must be 1"
     if len(practice.get("answers", [])) != 3 or len(practice.get("answer_notes", [])) != 3:
         return False, "practice answer sizes mismatch"
+    suspicious_fragments = ["誤り", "再考が必要", "ここでは誤り", "using", "contingency", "頂:"]
+    serialized = json.dumps(result, ensure_ascii=False)
+    if any(fragment in serialized for fragment in suspicious_fragments):
+        return False, "suspicious wording found"
+    short_notes = [note for note in practice.get("answer_notes", []) if len(str(note).strip()) < 20]
+    if short_notes:
+        return False, "answer_notes too short"
     return True, ""
 
 
 def review_material(result: dict[str, Any], reviewer_model: str | None, timeout_seconds: int) -> tuple[bool, int, str]:
     if not reviewer_model:
-        return True, 75, "review skipped"
+        return False, 0, "review model required"
     prompt = MATERIAL_REVIEW_PROMPT + "\n\n" + json.dumps(result, ensure_ascii=False, indent=2)
     review = ollama_chat(reviewer_model, prompt, review_schema(), timeout_seconds=timeout_seconds)
     accepted = bool(review["accepted"]) and int(review["score"]) >= 75
