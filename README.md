@@ -35,6 +35,7 @@
 ├── MATH_INPUT_GUIDE.md
 ├── MATH_PRACTICE_SET.md
 ├── local_ai_simulator.py
+├── local_ai_materials_simulator.py
 ├── requirements.txt
 ├── README.md
 └── data
@@ -78,6 +79,29 @@ GITHUB_DATA_PATH = "data"
 - [MATH_INPUT_GUIDE.md](./MATH_INPUT_GUIDE.md)
 - [MATH_PRACTICE_SET.md](./MATH_PRACTICE_SET.md)
 - 問題を解く前に、単元ごとの判断の型を短く確認できます。
+
+## 教材AIシミュレーター
+
+教科書と練習問題も、ローカルAIで `生成 -> 査読 -> 採用` の流れにできます。
+
+基本実行:
+
+```powershell
+python local_ai_materials_simulator.py --generator-model qwen3:4b --idle-threshold 8
+```
+
+放置時に自動再開し続ける:
+
+```powershell
+python local_ai_materials_simulator.py --generator-model qwen3:4b --idle-threshold 8 --loop --poll-seconds 180
+```
+
+ポイント:
+
+- 教科書ブロックと練習問題ブロックを同時に作る
+- 単元ごとに `data/material_jobs.json` で交代実行する
+- 通った案だけ `data/material_suggestions.json` に保存する
+- 問題シミュレーターと同じく、放置時だけ短く回す
 
 ## 設計方針
 
