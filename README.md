@@ -82,6 +82,7 @@ GITHUB_DATA_PATH = "data"
 - [MATH_INPUT_GUIDE.md](./MATH_INPUT_GUIDE.md)
 - [MATH_PRACTICE_SET.md](./MATH_PRACTICE_SET.md)
 - 問題を解く前に、単元ごとの判断の型を短く確認できます。
+- アプリの `教材` タブからもいつでも見られます。
 
 ## 教材AIシミュレーター
 
@@ -122,6 +123,7 @@ python local_ai_supervisor.py --loop
 - 日中は `qwen3:4b` を優先
 - 夜は空きメモリが十分あるときだけ `qwen2-math:7b` へ切り替え
 - 問題生成と教材生成を交代で回す
+- 夜は教材生成の比率を少し上げる
 - 空きメモリが少ないときはスキップしてモデルも止める
 - `start_local_ai_supervisor.ps1` でそのまま起動できる
 - 教材ジョブのあとに `MATH_TEXTBOOK_AI.md` と `MATH_PRACTICE_SET_AI.md` を自動更新する

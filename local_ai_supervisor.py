@@ -124,6 +124,7 @@ def load_state() -> dict[str, Any]:
         "last_profile": "",
         "last_run_at": "",
         "cycles": 0,
+        "night_material_streak": 0,
         "last_decision": "",
         "last_free_gb": 0.0,
         "last_idle_minutes": 0.0,
@@ -142,6 +143,7 @@ def load_state() -> dict[str, Any]:
         "last_profile": str(state.get("last_profile", "")),
         "last_run_at": str(state.get("last_run_at", "")),
         "cycles": int(state.get("cycles", 0)),
+        "night_material_streak": int(state.get("night_material_streak", 0)),
         "last_decision": str(state.get("last_decision", "")),
         "last_free_gb": float(state.get("last_free_gb", 0.0)),
         "last_idle_minutes": float(state.get("last_idle_minutes", 0.0)),
@@ -216,7 +218,21 @@ def step(dry_run: bool = False) -> int:
         return 180
     if not dry_run:
         run_profile(profile)
-        state["next_worker"] = "material" if profile.worker == "question" else "question"
+        if is_night_hour(datetime.now().hour):
+            if profile.worker == "question":
+                state["next_worker"] = "material"
+                state["night_material_streak"] = 0
+            else:
+                streak = int(state.get("night_material_streak", 0))
+                if streak == 0:
+                    state["next_worker"] = "material"
+                    state["night_material_streak"] = 1
+                else:
+                    state["next_worker"] = "question"
+                    state["night_material_streak"] = 0
+        else:
+            state["next_worker"] = "material" if profile.worker == "question" else "question"
+            state["night_material_streak"] = 0
         state["last_profile"] = profile.name
         state["last_run_at"] = now_text()
         state["cycles"] = int(state.get("cycles", 0)) + 1
