@@ -89,3 +89,4 @@ __marimo__/
 data/simulation_state.json
 data/material_simulation_state.json
 data/material_suggestions.json
+data/supervisor_state.json

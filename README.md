@@ -36,6 +36,8 @@
 ├── MATH_PRACTICE_SET.md
 ├── local_ai_simulator.py
 ├── local_ai_materials_simulator.py
+├── local_ai_supervisor.py
+├── start_local_ai_supervisor.ps1
 ├── requirements.txt
 ├── README.md
 └── data
@@ -102,6 +104,24 @@ python local_ai_materials_simulator.py --generator-model qwen3:4b --idle-thresho
 - 単元ごとに `data/material_jobs.json` で交代実行する
 - 通った案だけ `data/material_suggestions.json` に保存する
 - 問題シミュレーターと同じく、放置時だけ短く回す
+
+## メモリ調整つき監督モード
+
+日中は軽量、夜はやや高品質に寄せつつ、空きメモリが足りないと自動で止める監督スクリプトを入れています。
+
+基本実行:
+
+```powershell
+python local_ai_supervisor.py --loop
+```
+
+ポイント:
+
+- 日中は `qwen3:4b` を優先
+- 夜は空きメモリが十分あるときだけ `qwen2-math:7b` へ切り替え
+- 問題生成と教材生成を交代で回す
+- 空きメモリが少ないときはスキップしてモデルも止める
+- `start_local_ai_supervisor.ps1` でそのまま起動できる
 
 ## 設計方針
 
