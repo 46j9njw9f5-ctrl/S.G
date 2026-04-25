@@ -12,6 +12,7 @@ from typing import Any
 
 import requests
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 
 APP_TITLE = "学習改善エンジン"
@@ -40,8 +41,31 @@ def ensure_data_files() -> None:
             path.write_text("[]", encoding="utf-8")
 
 
+def to_jsonable(value: Any) -> Any:
+    if isinstance(value, Fraction):
+        return {"__type__": "fraction", "value": f"{value.numerator}/{value.denominator}"}
+    if isinstance(value, dict):
+        return {key: to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [to_jsonable(item) for item in value]
+    return value
+
+
+def from_jsonable(value: Any) -> Any:
+    if isinstance(value, dict):
+        if value.get("__type__") == "fraction":
+            return Fraction(value["value"])
+        return {key: from_jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [from_jsonable(item) for item in value]
+    return value
+
+
 def secret(name: str, default: str = "") -> str:
-    return st.secrets[name] if name in st.secrets else default
+    try:
+        return st.secrets[name] if name in st.secrets else default
+    except StreamlitSecretNotFoundError:
+        return default
 
 
 def github_storage_enabled() -> bool:
@@ -77,7 +101,7 @@ def github_fetch_file(path: Path) -> tuple[list[dict[str, Any]], str | None]:
     payload = response.json()
     content = base64.b64decode(payload["content"]).decode("utf-8")
     try:
-        return json.loads(content), payload["sha"]
+        return from_jsonable(json.loads(content)), payload["sha"]
     except json.JSONDecodeError:
         return [], payload["sha"]
 
@@ -88,7 +112,9 @@ def github_save_file(path: Path, data: list[dict[str, Any]]) -> None:
     url = f"{GITHUB_API_BASE}/repos/{secret('GITHUB_REPO')}/contents/{repo_relative_path(path)}"
     body: dict[str, Any] = {
         "message": f"Update {repo_relative_path(path)} from Streamlit app",
-        "content": base64.b64encode(json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")).decode("utf-8"),
+        "content": base64.b64encode(
+            json.dumps(to_jsonable(data), ensure_ascii=False, indent=2).encode("utf-8")
+        ).decode("utf-8"),
         "branch": github_branch(),
     }
     if sha:
@@ -106,14 +132,14 @@ def load_json(path: Path) -> list[dict[str, Any]]:
         except requests.RequestException:
             st.warning("GitHub 永続保存の読み込みに失敗したため、一時ファイルを参照します。")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return from_jsonable(json.loads(path.read_text(encoding="utf-8")))
     except json.JSONDecodeError:
         return []
 
 
 def save_json(path: Path, data: list[dict[str, Any]]) -> None:
     ensure_data_files()
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(to_jsonable(data), ensure_ascii=False, indent=2), encoding="utf-8")
     if github_storage_enabled():
         try:
             github_save_file(path, data)
