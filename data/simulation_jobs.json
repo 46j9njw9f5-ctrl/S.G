@@ -1,0 +1,30 @@
+[
+  {
+    "course": "数学I",
+    "unit": "二次関数",
+    "difficulty": "標準",
+    "skill_tag": "定義域見落とし",
+    "batch_size": 1
+  },
+  {
+    "course": "数学A",
+    "unit": "確率",
+    "difficulty": "標準",
+    "skill_tag": "余事象の使い忘れ",
+    "batch_size": 1
+  },
+  {
+    "course": "数学II",
+    "unit": "微分法",
+    "difficulty": "標準",
+    "skill_tag": "接線式の立て方ミス",
+    "batch_size": 1
+  },
+  {
+    "course": "数学B",
+    "unit": "数列",
+    "difficulty": "標準",
+    "skill_tag": "和の公式ミス",
+    "batch_size": 1
+  }
+]
