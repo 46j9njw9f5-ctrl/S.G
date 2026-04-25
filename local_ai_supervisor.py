@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from local_ai_materials_merge import merge_material_suggestions
 from local_ai_materials_simulator import run_cycle as run_material_cycle
 from local_ai_materials_simulator import stop_model as stop_material_model
 from local_ai_simulator import run_cycle as run_question_cycle
@@ -118,7 +119,16 @@ def is_night_hour(hour: int) -> bool:
 
 
 def load_state() -> dict[str, Any]:
-    default_state = {"next_worker": "question", "last_profile": "", "last_run_at": "", "cycles": 0}
+    default_state = {
+        "next_worker": "question",
+        "last_profile": "",
+        "last_run_at": "",
+        "cycles": 0,
+        "last_decision": "",
+        "last_free_gb": 0.0,
+        "last_idle_minutes": 0.0,
+        "last_merged_units": 0,
+    }
     if not STATE_FILE.exists():
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         STATE_FILE.write_text(json.dumps(default_state, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -132,6 +142,10 @@ def load_state() -> dict[str, Any]:
         "last_profile": str(state.get("last_profile", "")),
         "last_run_at": str(state.get("last_run_at", "")),
         "cycles": int(state.get("cycles", 0)),
+        "last_decision": str(state.get("last_decision", "")),
+        "last_free_gb": float(state.get("last_free_gb", 0.0)),
+        "last_idle_minutes": float(state.get("last_idle_minutes", 0.0)),
+        "last_merged_units": int(state.get("last_merged_units", 0)),
     }
 
 
@@ -187,13 +201,18 @@ def run_profile(profile: Profile) -> None:
         max_jobs_per_cycle=1,
         stop_models_after_job=True,
     )
+    merge_material_suggestions()
 
 
 def step(dry_run: bool = False) -> int:
     state = load_state()
     profile, reason = choose_profile(state)
+    state["last_decision"] = reason
+    state["last_free_gb"] = round(free_memory_gb(), 2)
+    state["last_idle_minutes"] = round(idle_minutes(), 2)
     print(f"[{now_text()}] {reason}")
     if not profile:
+        save_state(state)
         return 180
     if not dry_run:
         run_profile(profile)
@@ -201,6 +220,8 @@ def step(dry_run: bool = False) -> int:
         state["last_profile"] = profile.name
         state["last_run_at"] = now_text()
         state["cycles"] = int(state.get("cycles", 0)) + 1
+        if profile.worker == "material":
+            state["last_merged_units"] = merge_material_suggestions()[0]
         save_state(state)
     return profile.poll_seconds
 

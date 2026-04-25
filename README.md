@@ -36,6 +36,7 @@
 ├── MATH_PRACTICE_SET.md
 ├── local_ai_simulator.py
 ├── local_ai_materials_simulator.py
+├── local_ai_materials_merge.py
 ├── local_ai_supervisor.py
 ├── start_local_ai_supervisor.ps1
 ├── requirements.txt
@@ -104,6 +105,7 @@ python local_ai_materials_simulator.py --generator-model qwen3:4b --idle-thresho
 - 単元ごとに `data/material_jobs.json` で交代実行する
 - 通った案だけ `data/material_suggestions.json` に保存する
 - 問題シミュレーターと同じく、放置時だけ短く回す
+- `local_ai_materials_merge.py` で AI教材ノートへ統合できる
 
 ## メモリ調整つき監督モード
 
@@ -122,6 +124,7 @@ python local_ai_supervisor.py --loop
 - 問題生成と教材生成を交代で回す
 - 空きメモリが少ないときはスキップしてモデルも止める
 - `start_local_ai_supervisor.ps1` でそのまま起動できる
+- 教材ジョブのあとに `MATH_TEXTBOOK_AI.md` と `MATH_PRACTICE_SET_AI.md` を自動更新する
 
 ## 設計方針
 

@@ -21,6 +21,7 @@ LOGS_FILE = DATA_DIR / "logs.json"
 MISTAKES_FILE = DATA_DIR / "mistakes.json"
 QUESTIONS_FILE = DATA_DIR / "questions.json"
 BANK_FILE = DATA_DIR / "question_bank.json"
+SUPERVISOR_STATE_FILE = DATA_DIR / "supervisor_state.json"
 
 GITHUB_API_BASE = "https://api.github.com"
 DIFFICULTIES = ["自動調整", "基礎", "標準", "共通テスト風"]
@@ -222,6 +223,15 @@ def append_json(path: Path, item: dict[str, Any]) -> None:
     data = load_json(path)
     data.append(item)
     save_json(path, data)
+
+
+def load_local_json(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return default
 
 
 def count_by_key(items: list[dict[str, Any]], key: str) -> dict[str, int]:
@@ -898,6 +908,25 @@ def render_storage_status() -> None:
             st.caption("永続化するには Streamlit secrets に GitHub 設定を追加してください。")
 
 
+def render_supervisor_status() -> None:
+    state = load_local_json(SUPERVISOR_STATE_FILE, {})
+    if not state:
+        return
+    with st.container(border=True):
+        st.write("ローカルAI監督モード")
+        profile = state.get("last_profile") or "まだ実行前"
+        next_worker = state.get("next_worker") or "question"
+        st.write(f"直近プロファイル: `{profile}`")
+        st.write(f"次の担当: `{next_worker}` / 実行回数: `{state.get('cycles', 0)}`")
+        if state.get("last_run_at"):
+            st.caption(f"最終実行: {state['last_run_at']}")
+        if state.get("last_decision"):
+            st.caption(f"直近判断: {state['last_decision']}")
+        st.caption(
+            f"空きメモリ: {state.get('last_free_gb', 0)} GB / アイドル: {state.get('last_idle_minutes', 0)} 分 / 教材統合: {state.get('last_merged_units', 0)} 単元"
+        )
+
+
 def render_home(logs: list[dict[str, Any]], questions: list[dict[str, Any]], analysis: dict[str, Any]) -> None:
     st.subheader("今日の状況")
     c1, c2 = st.columns(2)
@@ -1174,6 +1203,7 @@ def main() -> None:
     st.title(APP_TITLE)
     st.caption("数学I・A・II・B 専用の、選択式ベース学習最適化アプリ")
     render_storage_status()
+    render_supervisor_status()
     st.caption("現在は数学専用です。記述式ではなく、スマホで解きやすい4択中心で構成しています。")
 
     tabs = st.tabs(["ホーム", "問題生成", "解答", "分析"])
