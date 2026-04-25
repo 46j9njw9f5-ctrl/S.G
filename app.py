@@ -27,6 +27,7 @@ DIFFICULTIES = ["自動調整", "基礎", "標準", "共通テスト風"]
 REVIEW_INTERVALS_CORRECT = [1, 3, 7]
 REVIEW_INTERVALS_INCORRECT = [0, 1, 3]
 REFLECTION_STEPS = ["条件整理", "公式選択", "計算処理", "図形イメージ", "場合分け", "見直し"]
+CHOICE_REASONS = ["軸や条件で判断した", "公式で判断した", "消去法で選んだ", "感覚で選んだ", "計算で押し切った"]
 
 MATH_CURRICULUM: dict[str, dict[str, dict[str, Any]]] = {
     "数学I": {
@@ -665,6 +666,21 @@ def generate_questions(course: str, unit: str, difficulty: str, count: int, exis
     return selected
 
 
+def generate_skill_drill(
+    course: str,
+    unit: str,
+    difficulty: str,
+    skill_tag: str,
+    count: int,
+    existing_questions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    generated = generate_questions(course, unit, difficulty, count * 3, existing_questions)
+    matched = [q for q in generated if q.get("skill_tag") == skill_tag]
+    if len(matched) >= count:
+        return matched[:count]
+    return generated[:count]
+
+
 def update_question(updated: dict[str, Any]) -> None:
     questions = load_json(QUESTIONS_FILE)
     new_questions = [updated if item["id"] == updated["id"] else item for item in questions]
@@ -750,6 +766,27 @@ def build_reflection_insight(questions: list[dict[str, Any]]) -> str:
     return f"振り返りでは『{top}』で詰まりやすい傾向です。平均自信度は {avg:.1f}/5 です。"
 
 
+def build_reason_insight(questions: list[dict[str, Any]]) -> str:
+    reflections = []
+    for q in questions:
+        reflections.extend(q.get("reflection_history", []))
+    reason_counts = count_by_key(reflections, "choice_reason")
+    if not reason_counts:
+        return "まだ選択理由データが少ないです。解答後に『なぜその選択肢にしたか』を残すと精度が上がります。"
+    top_reason = next(iter(reason_counts))
+    if top_reason == "感覚で選んだ":
+        return "『感覚で選んだ』が多めです。次は判断根拠を1つ言葉にしてから解くと伸びやすいです。"
+    if top_reason == "消去法で選んだ":
+        return "消去法は使えています。次は正答の根拠を先に作る練習を増やすと安定します。"
+    return f"最近は『{top_reason}』で解くことが多いです。この判断軸を同型問題で固めると強くなります。"
+
+
+def chess_training_plan(analysis: dict[str, Any]) -> str:
+    if analysis["top_unit"] and analysis["top_skill"]:
+        return f"チェス式連戦: {analysis['top_unit']} の {analysis['top_skill']} を 3 連続で解き、判断理由も毎回残す。"
+    return "チェス式連戦: 同じ単元の同型問題を 3 連続で解き、判断理由を毎回残す。"
+
+
 def select_videos(course: str, unit: str) -> list[tuple[str, str]]:
     return MATH_CURRICULUM[course][unit]["videos"]
 
@@ -778,9 +815,16 @@ def build_analysis(logs: list[dict[str, Any]], mistakes: list[dict[str, Any]], q
         "holds": holds,
         "recommended_difficulty": recommended_difficulty(questions),
         "reflection_insight": build_reflection_insight(questions),
+        "reason_insight": build_reason_insight(questions),
         "suggestion": suggestion,
         "top_unit": top_unit,
         "top_skill": top_skill,
+        "chess_plan": chess_training_plan(
+            {
+                "top_unit": top_unit,
+                "top_skill": top_skill,
+            }
+        ),
     }
 
 
@@ -862,6 +906,8 @@ def render_home(logs: list[dict[str, Any]], questions: list[dict[str, Any]], ana
         render_metric_card("次の難易度", analysis["recommended_difficulty"])
     render_metric_card("次にやること", analysis["suggestion"])
     render_metric_card("振り返り分析", analysis["reflection_insight"])
+    render_metric_card("チェス式メニュー", analysis["chess_plan"])
+    render_metric_card("選択理由の傾向", analysis["reason_insight"])
 
     with st.expander("学習ログを追加", expanded=False):
         with st.form("study_log_form", clear_on_submit=True):
@@ -933,6 +979,26 @@ def render_problem_tab(questions: list[dict[str, Any]], analysis: dict[str, Any]
             st.success("弱点単元の問題を追加しました。")
             st.rerun()
 
+    st.subheader("チェス式トレーニング")
+    with st.container(border=True):
+        st.write("同じ判断型を短く連戦して、選んだ理由も残すモードです。")
+        st.write(analysis["chess_plan"])
+        if analysis["top_unit"] and analysis["top_skill"]:
+            target_course = next((name for name, units in MATH_CURRICULUM.items() if analysis["top_unit"] in units), course)
+            if st.button(f"{analysis['top_unit']} の {analysis['top_skill']} を 3 連戦する"):
+                generated = generate_skill_drill(
+                    target_course,
+                    analysis["top_unit"],
+                    "自動調整",
+                    analysis["top_skill"],
+                    3,
+                    questions,
+                )
+                questions.extend(generated)
+                save_json(QUESTIONS_FILE, questions)
+                st.success("チェス式の同型3連戦を追加しました。")
+                st.rerun()
+
     st.subheader("単元の解説動画")
     for title, url in select_videos(course, unit):
         st.write(f"- [{title}]({url})")
@@ -994,6 +1060,7 @@ def render_reflection_form(question: dict[str, Any]) -> None:
         with st.form(f"reflection_{question['id']}", clear_on_submit=True):
             confidence = st.slider("今回はどれくらい自信がありましたか？", 1, 5, 3)
             hardest_step = st.selectbox("いちばん難しかった工程", ["特になし"] + REFLECTION_STEPS)
+            choice_reason = st.selectbox("なぜその選択肢を選びましたか？", ["特になし"] + CHOICE_REASONS)
             memo = st.text_area("メモ", placeholder="次に気をつけたいこと")
             submitted = st.form_submit_button("振り返りを保存")
             if submitted:
@@ -1003,6 +1070,7 @@ def render_reflection_form(question: dict[str, Any]) -> None:
                         "created_at": now_iso(),
                         "confidence": confidence,
                         "hardest_step": "" if hardest_step == "特になし" else hardest_step,
+                        "choice_reason": "" if choice_reason == "特になし" else choice_reason,
                         "memo": memo,
                     },
                 )
@@ -1076,6 +1144,12 @@ def render_analysis_tab(logs: list[dict[str, Any]], mistakes: list[dict[str, Any
     with st.container(border=True):
         st.write("振り返り分析")
         st.write(analysis["reflection_insight"])
+    with st.container(border=True):
+        st.write("選択理由の分析")
+        st.write(analysis["reason_insight"])
+    with st.container(border=True):
+        st.write("チェス式メニュー")
+        st.write(analysis["chess_plan"])
     if analysis["due_reviews"]:
         st.subheader("復習期限が来た問題")
         for q in analysis["due_reviews"][:4]:
