@@ -67,6 +67,23 @@ These are too heavy for sustained multi-app use on this machine.
 4. Save only high-scoring questions into `data/question_bank.json`
 5. Stop the model after the batch
 
+## Supervisor Mode
+
+- `local_ai_supervisor.py` watches idle time, free memory, and time of day
+- Daytime:
+  - prefers `qwen3:4b`
+  - runs only short single jobs
+- Nighttime:
+  - upgrades question generation to `qwen2-math:7b` when enough memory is free
+  - alternates question jobs and material jobs
+- If free memory gets too low, it skips the cycle and stops models
+
+Recommended command:
+
+```powershell
+python local_ai_supervisor.py --loop
+```
+
 ## Useful Commands
 
 ```powershell
