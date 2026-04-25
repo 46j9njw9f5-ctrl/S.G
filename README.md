@@ -15,6 +15,7 @@
 ## 主な機能
 
 - 単元別の選択式問題生成
+- 高品質問題バンク優先の出題
 - 正誤判定
 - コース別 / 単元別 / 技能別分析
 - 復習キュー
@@ -33,7 +34,8 @@
 └── data
     ├── logs.json
     ├── mistakes.json
-    └── questions.json
+    ├── questions.json
+    └── question_bank.json
 ```
 
 ## デプロイ手順
@@ -68,6 +70,7 @@ GITHUB_DATA_PATH = "data"
 - 数学専用にする
 - 数学I・A・II・B を単元別に分析する
 - 記述式ではなく選択式で回転率を上げる
+- 良問の構造をもつ問題バンクを優先して使う
 - 無料で動く
 - 外部サーバー不要
 - Streamlit Cloud へそのまま載せられる構成にする
