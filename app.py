@@ -65,6 +65,43 @@ YOUTUBE_RECOMMENDATIONS = [
     },
 ]
 
+QUALITY_BANK = {
+    "定義域見落とし": {
+        "focus_prompt": "定義域を書き、軸が範囲内か外かを最初に判定する。",
+        "coach": "頂点の値をすぐ答えたくなったら一度止まり、まず範囲条件を確認する。",
+        "drill": "軸が範囲外になる問題で、端点比較だけで極値を決める練習を入れる。",
+    },
+    "軸ミス": {
+        "focus_prompt": "式の形から軸を一行で書き出してから計算に入る。",
+        "coach": "標準形なら平方完成、頂点形式なら括弧の符号に注意する。",
+        "drill": "軸だけを先に10題書き出す練習をすると安定する。",
+    },
+    "場合分け忘れ": {
+        "focus_prompt": "軸が範囲内か外かで処理が変わることを意識する。",
+        "coach": "『まず軸判定、その後に比較候補決定』の順を固定する。",
+        "drill": "軸が範囲内と範囲外の問題を交互に解いて判定を習慣化する。",
+    },
+    "符号ミス": {
+        "focus_prompt": "上に開くか下に開くかを言葉で確認してから最大最小を決める。",
+        "coach": "マイナスがあるときほど、最後に『最大か最小か』を読み返す。",
+        "drill": "a が負の問題だけをまとめて解いて見分けを強化する。",
+    },
+    "端点比較忘れ": {
+        "focus_prompt": "比較候補を先に列挙して、左右の端点を両方計算する。",
+        "coach": "端点の片方だけで決めず、両方の y 値を書く。",
+        "drill": "軸が範囲外の問題だけで端点比較を反復する。",
+    },
+}
+
+REFLECTION_STEPS = [
+    "軸の特定",
+    "定義域の確認",
+    "場合分けの判断",
+    "端点比較",
+    "計算処理",
+    "最大最小の読み取り",
+]
+
 
 @dataclass
 class QuestionBundle:
@@ -397,8 +434,21 @@ def detect_primary_weakness(question: dict[str, Any]) -> str:
     return "定義域見落とし"
 
 
+def quality_profile(weakness: str) -> dict[str, str]:
+    return QUALITY_BANK.get(
+        weakness,
+        {
+            "focus_prompt": "軸、範囲、比較候補の順で整理する。",
+            "coach": "計算に入る前に『何を比べるか』を決める。",
+            "drill": "基本問題で解法の順番を固定する。",
+        },
+    )
+
+
 def build_explanation_sections(question: dict[str, Any]) -> dict[str, Any]:
     answer = question["answer"]
+    weakness = question.get("recommended_weakness") or detect_primary_weakness(question)
+    quality = quality_profile(weakness)
     base_rule = "二次関数は『軸を見て、範囲を見て、頂点と端点のどこを比べるかを決める』の順で考える。"
     if answer["mode"] == "single":
         return {
@@ -406,16 +456,19 @@ def build_explanation_sections(question: dict[str, Any]) -> dict[str, Any]:
             "overview": [
                 f"{question['function_style']} から軸 x = {fraction_to_display(answer['axis'])} をつかむ。",
                 f"{answer['opens']}ので、頂点がそのまま {answer['extremum_type']} になる。",
+                f"今回の学習テーマ: {quality['focus_prompt']}",
             ],
             "steps": [
                 f"軸は x = {fraction_to_display(answer['axis'])}。",
                 f"{answer['opens']}かを確認する。",
                 f"頂点の y 座標 {fraction_to_display(answer['value'])} を読む。",
                 f"答えは {answer['extremum_type']} {fraction_to_display(answer['value'])}、そのとき x = {fraction_to_display(answer['x'])}。",
+                f"なぜこの判断か: {quality['coach']}",
             ],
             "judgement": [
                 "定義域がないので端点比較は不要。",
                 "上に開くなら最小、下に開くなら最大を最初に決める。",
+                "解く前に『軸はどこか』『開き方はどちらか』の2問を自分に投げる。",
             ],
             "common_mistakes": [
                 "軸の符号を逆に読む。",
@@ -426,6 +479,7 @@ def build_explanation_sections(question: dict[str, Any]) -> dict[str, Any]:
                 "軸を書いたか",
                 "上に開くか下に開くか確認したか",
                 "求めるのが最大か最小か一致しているか",
+                quality["drill"],
             ],
         }
 
@@ -436,6 +490,7 @@ def build_explanation_sections(question: dict[str, Any]) -> dict[str, Any]:
         "overview": [
             f"軸 x = {fraction_to_display(answer['axis'])} が定義域の {axis_phrase} かを判定する。",
             "比べるべき点を先に決めてから y 値比較に進む。",
+            f"今回の学習テーマ: {quality['focus_prompt']}",
         ],
         "steps": [
             f"定義域は {format_domain(int(answer['left_endpoint']), int(answer['right_endpoint']))}。",
@@ -443,11 +498,13 @@ def build_explanation_sections(question: dict[str, Any]) -> dict[str, Any]:
             f"{answer['opens']}ので、軸に近い点ほど {near_phrase} なりやすい。",
             "頂点を使うか端点比較だけで済むかをここで決める。",
             f"最大値は {fraction_to_display(answer['max_value'])}（x = {fraction_to_display(answer['max_x'])}）、最小値は {fraction_to_display(answer['min_value'])}（x = {fraction_to_display(answer['min_x'])}）。",
+            f"なぜこの判断か: {quality['coach']}",
         ],
         "judgement": [
             "定義域つきでは頂点だけ見て終わらない。",
             "軸が範囲外なら端点比較が主役になる。",
             "軸が範囲内なら頂点と端点の役割を分ける。",
+            "比較候補を決める前に計算を始めない。",
         ],
         "common_mistakes": [
             "定義域を見ずに頂点の値をそのまま答える。",
@@ -460,6 +517,7 @@ def build_explanation_sections(question: dict[str, Any]) -> dict[str, Any]:
             "軸が範囲内か外か判定したか",
             "比べる候補を先に決めたか",
             "頂点と端点を混同していないか",
+            quality["drill"],
         ],
     }
 
@@ -713,6 +771,33 @@ def apply_answer_result(question: dict[str, Any], correct: bool, user_input: dic
     return question
 
 
+def save_reflection(question_id: str, reflection: dict[str, Any]) -> None:
+    questions = load_json(QUESTIONS_FILE)
+    for item in questions:
+        if item["id"] == question_id:
+            history = item.get("reflection_history", [])
+            history.append(reflection)
+            item["reflection_history"] = history
+            item["last_reflection"] = reflection
+            break
+    save_json(QUESTIONS_FILE, questions)
+
+
+def build_reflection_insight(questions: list[dict[str, Any]]) -> str:
+    reflections = []
+    for item in questions:
+        reflections.extend(item.get("reflection_history", []))
+    if not reflections:
+        return "まだ振り返りデータが少ないので、解いたあとに任意の質問へ答えると分析が深くなります。"
+
+    hardest_counts = count_by_key(reflections, "hardest_step", REFLECTION_STEPS)
+    top_step = next((k for k, v in hardest_counts.items() if v > 0), None)
+    avg_conf = sum(int(r.get("confidence", 0)) for r in reflections) / max(1, len(reflections))
+    if top_step:
+        return f"振り返りでは『{top_step}』で詰まりやすい傾向です。平均自信度は {avg_conf:.1f}/5 です。"
+    return f"振り返りの平均自信度は {avg_conf:.1f}/5 です。"
+
+
 def compute_accuracy(questions: list[dict[str, Any]]) -> float:
     answered = [item for item in questions if item.get("answered")]
     if not answered:
@@ -823,6 +908,7 @@ def build_analysis(logs: list[dict[str, Any]], mistakes: list[dict[str, Any]], q
         "hold_questions": hold_questions,
         "recommended_difficulty": recommended_difficulty,
         "focus_correlation": compute_focus_correlation(logs),
+        "reflection_insight": build_reflection_insight(questions),
         "videos": select_video_recommendations(top_weakness, recommended_difficulty),
     }
 
@@ -1134,6 +1220,32 @@ def render_question_actions(question: dict[str, Any]) -> None:
             st.rerun()
 
 
+def render_reflection_form(question: dict[str, Any]) -> None:
+    with st.expander("任意の振り返り質問", expanded=False):
+        st.write("分析を深くするための任意入力です。1分以内で終わります。")
+        with st.form(f"reflection_{question['id']}", clear_on_submit=True):
+            confidence = st.slider("今回はどれくらい自信がありましたか？", 1, 5, 3)
+            hardest_step = st.selectbox("いちばん難しかった工程", ["特になし"] + REFLECTION_STEPS)
+            checked_axis = st.radio("解く前に軸を確認しましたか？", ["はい", "いいえ"], horizontal=True)
+            checked_domain = st.radio("定義域を意識しましたか？", ["はい", "いいえ", "定義域なし"], horizontal=True)
+            checked_endpoints = st.radio("端点比較を意識しましたか？", ["はい", "いいえ", "不要"], horizontal=True)
+            memo = st.text_area("ひとことメモ", placeholder="どこで迷ったか、次回気をつけたいこと")
+            submitted = st.form_submit_button("振り返りを保存")
+            if submitted:
+                reflection = {
+                    "created_at": now_iso(),
+                    "confidence": confidence,
+                    "hardest_step": hardest_step if hardest_step != "特になし" else "",
+                    "checked_axis": checked_axis,
+                    "checked_domain": checked_domain,
+                    "checked_endpoints": checked_endpoints,
+                    "memo": memo,
+                }
+                save_reflection(question["id"], reflection)
+                st.success("振り返りを保存しました。分析に反映されます。")
+                st.rerun()
+
+
 def render_answer_tab() -> None:
     st.subheader("解答")
     questions = load_json(QUESTIONS_FILE)
@@ -1160,6 +1272,7 @@ def render_answer_tab() -> None:
 
     explanation_mode = st.radio("解説の出し方", ["方針だけ", "途中式つき", "完全版"], horizontal=True)
     answer = question["answer"]
+    show_reflection = False
     form_key = f"answer_form_{question['id']}"
     with st.form(form_key):
         if answer["mode"] == "single":
@@ -1178,6 +1291,7 @@ def render_answer_tab() -> None:
                     st.error(feedback)
                 with st.expander("解説", expanded=True):
                     render_explanation_sections(question["explanation_sections"], explanation_mode)
+                show_reflection = True
         else:
             max_value = st.text_input("最大値", placeholder="例: 8")
             max_x = st.text_input("最大になる x", placeholder="例: -1")
@@ -1202,6 +1316,10 @@ def render_answer_tab() -> None:
                     st.error(feedback)
                 with st.expander("解説", expanded=True):
                     render_explanation_sections(question["explanation_sections"], explanation_mode)
+                show_reflection = True
+
+    if show_reflection or question.get("last_result") is not None:
+        render_reflection_form(question)
 
 
 def render_analysis_tab(logs: list[dict[str, Any]], mistakes: list[dict[str, Any]], questions: list[dict[str, Any]]) -> None:
@@ -1232,6 +1350,10 @@ def render_analysis_tab(logs: list[dict[str, Any]], mistakes: list[dict[str, Any
         st.write("おすすめの次の難易度")
         st.write(f"- {analysis['recommended_difficulty']}")
         st.write("- 正答率と最近の流れから自動で提案しています。")
+
+    with st.container(border=True):
+        st.write("振り返り分析")
+        st.write(analysis["reflection_insight"])
 
     st.subheader("類題生成")
     recommended_focus = analysis["top_weakness"] or "定義域見落とし"
