@@ -29,13 +29,15 @@
 ```text
 .
 ├── app.py
+├── local_ai_simulator.py
 ├── requirements.txt
 ├── README.md
 └── data
     ├── logs.json
     ├── mistakes.json
     ├── questions.json
-    └── question_bank.json
+    ├── question_bank.json
+    └── simulation_jobs.json
 ```
 
 ## デプロイ手順
@@ -74,3 +76,34 @@ GITHUB_DATA_PATH = "data"
 - 無料で動く
 - 外部サーバー不要
 - Streamlit Cloud へそのまま載せられる構成にする
+
+## ローカルAIシミュレーター
+
+Ollama を使って高品質な問題候補を自動生成し、問題バンクへ追加するローカルスクリプトを同梱しています。
+
+基本実行:
+
+```powershell
+python local_ai_simulator.py --generator-model qwen3:4b --idle-threshold 8
+```
+
+放置時に自動再開し続ける:
+
+```powershell
+python local_ai_simulator.py --generator-model qwen3:4b --idle-threshold 8 --loop --poll-seconds 120
+```
+
+高品質モードを夜や離席中だけ回したいとき:
+
+```powershell
+python local_ai_simulator.py --generator-model qwen2-math:7b --idle-threshold 12 --loop --poll-seconds 180 --max-jobs-per-cycle 1
+```
+
+ポイント:
+
+- PC を8分以上触っていないときだけ再開
+- `data/simulation_jobs.json` にある単元を交代で1件ずつ回す
+- 1回の放置で既定では1ジョブだけ、しかも1問だけ作る
+- ジョブごとにモデルを停止するので、ほかのアプリと共存しやすい
+- 生成された良問候補は `data/question_bank.json` に追記
+- 実行順は `data/simulation_state.json` に保存される
