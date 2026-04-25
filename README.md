@@ -31,7 +31,9 @@
 ```text
 .
 ├── app.py
+├── MATH_TEXTBOOK.md
 ├── MATH_INPUT_GUIDE.md
+├── MATH_PRACTICE_SET.md
 ├── local_ai_simulator.py
 ├── requirements.txt
 ├── README.md
@@ -72,7 +74,9 @@ GITHUB_DATA_PATH = "data"
 
 ## インプット用ノート
 
+- [MATH_TEXTBOOK.md](./MATH_TEXTBOOK.md)
 - [MATH_INPUT_GUIDE.md](./MATH_INPUT_GUIDE.md)
+- [MATH_PRACTICE_SET.md](./MATH_PRACTICE_SET.md)
 - 問題を解く前に、単元ごとの判断の型を短く確認できます。
 
 ## 設計方針
