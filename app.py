@@ -887,9 +887,15 @@ def init_page() -> None:
 
 def render_storage_status() -> None:
     if github_storage_enabled():
-        st.success(f"保存モード: GitHub 永続保存 ({secret('GITHUB_REPO')} / {github_branch()})")
+        with st.container(border=True):
+            st.success("保存モード: GitHub 永続保存")
+            st.write(f"保存先: `{secret('GITHUB_REPO')}` / ブランチ `{github_branch()}` / パス `{github_data_path()}`")
+            st.caption("スマホで入力した学習ログ・解答履歴・ミス記録は GitHub に残ります。")
     else:
-        st.warning("保存モード: 一時ファイル。永続化するには Streamlit secrets に GitHub 設定を追加してください。")
+        with st.container(border=True):
+            st.warning("保存モード: 一時ファイル")
+            st.write("この状態では再起動や再デプロイで記録が消える可能性があります。")
+            st.caption("永続化するには Streamlit secrets に GitHub 設定を追加してください。")
 
 
 def render_home(logs: list[dict[str, Any]], questions: list[dict[str, Any]], analysis: dict[str, Any]) -> None:
