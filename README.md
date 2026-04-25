@@ -21,6 +21,8 @@
 - 復習キュー
 - お気に入り / あとで解く
 - 解答後の任意振り返り質問
+- チェス式の同型3連戦トレーニング
+- 選択理由の記録と分析
 - GitHub を使った永続保存
 - スマホ向け UI
 
@@ -29,6 +31,7 @@
 ```text
 .
 ├── app.py
+├── MATH_INPUT_GUIDE.md
 ├── local_ai_simulator.py
 ├── requirements.txt
 ├── README.md
@@ -66,6 +69,11 @@ GITHUB_DATA_PATH = "data"
 3. `解答` で選択肢を選びます。
 4. `分析` で弱点単元と技能を確認します。
 5. 必要なら `ホーム画面に追加` してアプリのように使います。
+
+## インプット用ノート
+
+- [MATH_INPUT_GUIDE.md](./MATH_INPUT_GUIDE.md)
+- 問題を解く前に、単元ごとの判断の型を短く確認できます。
 
 ## 設計方針
 
