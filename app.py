@@ -22,6 +22,11 @@ MISTAKES_FILE = DATA_DIR / "mistakes.json"
 QUESTIONS_FILE = DATA_DIR / "questions.json"
 BANK_FILE = DATA_DIR / "question_bank.json"
 SUPERVISOR_STATE_FILE = DATA_DIR / "supervisor_state.json"
+TEXTBOOK_FILE = Path("MATH_TEXTBOOK.md")
+GUIDE_FILE = Path("MATH_INPUT_GUIDE.md")
+PRACTICE_FILE = Path("MATH_PRACTICE_SET.md")
+AI_TEXTBOOK_FILE = Path("MATH_TEXTBOOK_AI.md")
+AI_PRACTICE_FILE = Path("MATH_PRACTICE_SET_AI.md")
 
 GITHUB_API_BASE = "https://api.github.com"
 DIFFICULTIES = ["自動調整", "基礎", "標準", "共通テスト風"]
@@ -232,6 +237,15 @@ def load_local_json(path: Path, default: Any) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return default
+
+
+def load_text_file(path: Path, empty_text: str = "まだありません。") -> str:
+    if not path.exists():
+        return empty_text
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return empty_text
 
 
 def count_by_key(items: list[dict[str, Any]], key: str) -> dict[str, int]:
@@ -943,6 +957,7 @@ def render_home(logs: list[dict[str, Any]], questions: list[dict[str, Any]], ana
     render_metric_card("振り返り分析", analysis["reflection_insight"])
     render_metric_card("チェス式メニュー", analysis["chess_plan"])
     render_metric_card("選択理由の傾向", analysis["reason_insight"])
+    render_metric_card("教材を見る", "教材タブからいつでも確認", "教科書・判断ノート・練習問題・AI教材をまとめて見られます。")
 
     with st.expander("学習ログを追加", expanded=False):
         with st.form("study_log_form", clear_on_submit=True):
@@ -1193,6 +1208,28 @@ def render_analysis_tab(logs: list[dict[str, Any]], mistakes: list[dict[str, Any
                 st.caption(f"{q['course']} / {q['unit']} / 前回結果: {q.get('last_result')}")
 
 
+def render_materials_tab() -> None:
+    st.subheader("教材")
+    mode = st.segmented_control(
+        "表示教材",
+        ["教科書", "判断ノート", "練習問題", "AI教科書", "AI練習問題"],
+        default="教科書",
+    )
+    file_map = {
+        "教科書": TEXTBOOK_FILE,
+        "判断ノート": GUIDE_FILE,
+        "練習問題": PRACTICE_FILE,
+        "AI教科書": AI_TEXTBOOK_FILE,
+        "AI練習問題": AI_PRACTICE_FILE,
+    }
+    selected_file = file_map[mode or "教科書"]
+    with st.container(border=True):
+        st.write(f"表示中: `{selected_file.name}`")
+        if selected_file in [AI_TEXTBOOK_FILE, AI_PRACTICE_FILE]:
+            st.caption("AI教材は夜間シミュレーションで育ちます。スコアの高い候補が自動統合されます。")
+    st.markdown(load_text_file(selected_file))
+
+
 def main() -> None:
     init_page()
     logs = load_json(LOGS_FILE)
@@ -1206,7 +1243,7 @@ def main() -> None:
     render_supervisor_status()
     st.caption("現在は数学専用です。記述式ではなく、スマホで解きやすい4択中心で構成しています。")
 
-    tabs = st.tabs(["ホーム", "問題生成", "解答", "分析"])
+    tabs = st.tabs(["ホーム", "問題生成", "解答", "分析", "教材"])
     with tabs[0]:
         render_home(logs, questions, analysis)
     with tabs[1]:
@@ -1215,6 +1252,8 @@ def main() -> None:
         render_answer_tab()
     with tabs[3]:
         render_analysis_tab(logs, mistakes, questions)
+    with tabs[4]:
+        render_materials_tab()
 
 
 if __name__ == "__main__":
