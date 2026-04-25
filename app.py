@@ -2,105 +2,89 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import random
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from fractions import Fraction
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import requests
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
 
-APP_TITLE = "学習改善エンジン"
+APP_TITLE = "数学I・A・II・B 学習最適化"
 DATA_DIR = Path("data")
 LOGS_FILE = DATA_DIR / "logs.json"
 MISTAKES_FILE = DATA_DIR / "mistakes.json"
 QUESTIONS_FILE = DATA_DIR / "questions.json"
 
-SUBJECTS = ["数学", "英語", "国語", "理科", "社会", "情報", "その他"]
-ACTIVE_SUBJECTS = ["数学"]
-COMING_SOON_SUBJECTS = ["英語", "国語", "理科", "社会", "情報"]
-MISTAKE_CATEGORIES = ["理解不足", "計算ミス", "条件見落とし", "暗記不足", "解法ミス"]
-WEAKNESS_TAGS = ["定義域見落とし", "軸ミス", "場合分け忘れ", "符号ミス", "端点比較忘れ"]
-DIFFICULTIES = ["基礎", "標準", "共通テスト風"]
-DIFFICULTIES_WITH_AUTO = ["自動調整", "基礎", "標準", "共通テスト風"]
-DOMAIN_OPTIONS = ["定義域なし", "定義域あり", "おまかせ"]
 GITHUB_API_BASE = "https://api.github.com"
-
+DIFFICULTIES = ["自動調整", "基礎", "標準", "共通テスト風"]
 REVIEW_INTERVALS_CORRECT = [1, 3, 7]
 REVIEW_INTERVALS_INCORRECT = [0, 1, 3]
+REFLECTION_STEPS = ["条件整理", "公式選択", "計算処理", "図形イメージ", "場合分け", "見直し"]
 
-YOUTUBE_RECOMMENDATIONS = [
-    {
-        "title": "超わかる！ 2次関数の最大・最小",
-        "url": "https://www.youtube.com/watch?v=QrXZgYOSZ4w",
-        "focus": ["軸ミス", "定義域見落とし", "端点比較忘れ"],
-        "difficulty": ["基礎", "標準"],
-        "reason": "平方完成、軸、範囲の3点で整理する基本型に強いです。",
+MATH_CURRICULUM: dict[str, dict[str, dict[str, Any]]] = {
+    "数学I": {
+        "二次関数": {
+            "concepts": ["軸と頂点", "最大最小", "定義域つきの判定"],
+            "skills": ["軸ミス", "定義域見落とし", "端点比較忘れ"],
+            "videos": [
+                ("二次関数の最大・最小", "https://www.youtube.com/watch?v=QrXZgYOSZ4w"),
+                ("二次関数の最大・最小 演習", "https://youtu.be/hjsJ12VWFDs"),
+            ],
+        },
+        "図形と計量": {
+            "concepts": ["正弦定理", "余弦定理", "面積公式"],
+            "skills": ["公式選択ミス", "図の読み違い", "条件整理不足"],
+            "videos": [("図形と計量の基本", "https://www.youtube.com/results?search_query=%E5%9B%B3%E5%BD%A2%E3%81%A8%E8%A8%88%E9%87%8F+%E6%AD%A3%E5%BC%A6%E5%AE%9A%E7%90%86")],
+        },
+        "三角比": {
+            "concepts": ["基本値", "相互関係", "鈍角への拡張"],
+            "skills": ["値の暗記不足", "符号ミス", "相互関係の使い忘れ"],
+            "videos": [("三角比の基本", "https://www.youtube.com/results?search_query=%E4%B8%89%E8%A7%92%E6%AF%94+%E5%9F%BA%E6%9C%AC")],
+        },
     },
-    {
-        "title": "超わかる！ 2次関数の最大・最小 演習",
-        "url": "https://youtu.be/hjsJ12VWFDs",
-        "focus": ["場合分け忘れ", "端点比較忘れ"],
-        "difficulty": ["標準"],
-        "reason": "解法を見たあとに、そのまま演習で確認しやすい流れです。",
+    "数学A": {
+        "場合の数": {
+            "concepts": ["順列", "組合せ", "重複の除去"],
+            "skills": ["順列組合せの混同", "数え漏れ", "重複カウント"],
+            "videos": [("場合の数の基本", "https://www.youtube.com/results?search_query=%E5%A0%B4%E5%90%88%E3%81%AE%E6%95%B0+%E9%A0%86%E5%88%97+%E7%B5%84%E5%90%88%E3%81%9B")],
+        },
+        "確率": {
+            "concepts": ["余事象", "独立試行", "条件つき確率の前段階"],
+            "skills": ["全事象の取り違え", "余事象の使い忘れ", "樹形図不足"],
+            "videos": [("確率の基本", "https://www.youtube.com/results?search_query=%E7%A2%BA%E7%8E%87+%E4%BD%99%E4%BA%8B%E8%B1%A1+%E7%8B%AC%E7%AB%8B%E8%A9%A6%E8%A1%8C")],
+        },
     },
-    {
-        "title": "FocusGold予備校 共通テストに出る二次関数の最大・最小",
-        "url": "https://www.youtube.com/watch?v=KzRoZJ6rXac",
-        "focus": ["場合分け忘れ", "符号ミス", "端点比較忘れ"],
-        "difficulty": ["共通テスト風", "標準"],
-        "reason": "共通テスト風の処理順を固めたいときに相性がいいです。",
+    "数学II": {
+        "指数・対数": {
+            "concepts": ["指数法則", "対数の性質", "簡単な方程式"],
+            "skills": ["底の変換ミス", "対数法則の混同", "定義域見落とし"],
+            "videos": [("指数対数の基本", "https://www.youtube.com/results?search_query=%E6%8C%87%E6%95%B0+%E5%AF%BE%E6%95%B0+%E5%9F%BA%E6%9C%AC")],
+        },
+        "微分法": {
+            "concepts": ["導関数", "接線", "増減と極値"],
+            "skills": ["微分計算ミス", "符号判定ミス", "接線式の立て方ミス"],
+            "videos": [("微分法の基本", "https://www.youtube.com/results?search_query=%E5%BE%AE%E5%88%86%E6%B3%95+%E5%A2%97%E6%B8%9B+%E6%8E%A5%E7%B7%9A")],
+        },
     },
-    {
-        "title": "二次関数の最大値と最小値の求め方（記事＋動画）",
-        "url": "https://rikeinvest.com/math-1/saidai-saisho/",
-        "focus": ["軸ミス", "定義域見落とし"],
-        "difficulty": ["基礎"],
-        "reason": "短い説明で復習したいとき向けの基礎整理です。",
-    },
-]
-
-QUALITY_BANK = {
-    "定義域見落とし": {
-        "focus_prompt": "定義域を書き、軸が範囲内か外かを最初に判定する。",
-        "coach": "頂点の値をすぐ答えたくなったら一度止まり、まず範囲条件を確認する。",
-        "drill": "軸が範囲外になる問題で、端点比較だけで極値を決める練習を入れる。",
-    },
-    "軸ミス": {
-        "focus_prompt": "式の形から軸を一行で書き出してから計算に入る。",
-        "coach": "標準形なら平方完成、頂点形式なら括弧の符号に注意する。",
-        "drill": "軸だけを先に10題書き出す練習をすると安定する。",
-    },
-    "場合分け忘れ": {
-        "focus_prompt": "軸が範囲内か外かで処理が変わることを意識する。",
-        "coach": "『まず軸判定、その後に比較候補決定』の順を固定する。",
-        "drill": "軸が範囲内と範囲外の問題を交互に解いて判定を習慣化する。",
-    },
-    "符号ミス": {
-        "focus_prompt": "上に開くか下に開くかを言葉で確認してから最大最小を決める。",
-        "coach": "マイナスがあるときほど、最後に『最大か最小か』を読み返す。",
-        "drill": "a が負の問題だけをまとめて解いて見分けを強化する。",
-    },
-    "端点比較忘れ": {
-        "focus_prompt": "比較候補を先に列挙して、左右の端点を両方計算する。",
-        "coach": "端点の片方だけで決めず、両方の y 値を書く。",
-        "drill": "軸が範囲外の問題だけで端点比較を反復する。",
+    "数学B": {
+        "数列": {
+            "concepts": ["等差数列", "等比数列", "和の計算"],
+            "skills": ["一般項ミス", "和の公式ミス", "初項公差の取り違え"],
+            "videos": [("数列の基本", "https://www.youtube.com/results?search_query=%E6%95%B0%E5%88%97+%E7%AD%89%E5%B7%AE+%E7%AD%89%E6%AF%94")],
+        },
+        "ベクトル": {
+            "concepts": ["成分計算", "内積", "位置ベクトル"],
+            "skills": ["符号ミス", "座標変換ミス", "図形条件の翻訳不足"],
+            "videos": [("ベクトルの基本", "https://www.youtube.com/results?search_query=%E3%83%99%E3%82%AF%E3%83%88%E3%83%AB+%E5%86%85%E7%A9%8D+%E5%9F%BA%E6%9C%AC")],
+        },
     },
 }
-
-REFLECTION_STEPS = [
-    "軸の特定",
-    "定義域の確認",
-    "場合分けの判断",
-    "端点比較",
-    "計算処理",
-    "最大最小の読み取り",
-]
 
 
 @dataclass
@@ -113,26 +97,6 @@ def ensure_data_files() -> None:
     for path in [LOGS_FILE, MISTAKES_FILE, QUESTIONS_FILE]:
         if not path.exists():
             path.write_text("[]", encoding="utf-8")
-
-
-def to_jsonable(value: Any) -> Any:
-    if isinstance(value, Fraction):
-        return {"__type__": "fraction", "value": f"{value.numerator}/{value.denominator}"}
-    if isinstance(value, dict):
-        return {key: to_jsonable(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [to_jsonable(item) for item in value]
-    return value
-
-
-def from_jsonable(value: Any) -> Any:
-    if isinstance(value, dict):
-        if value.get("__type__") == "fraction":
-            return Fraction(value["value"])
-        return {key: from_jsonable(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [from_jsonable(item) for item in value]
-    return value
 
 
 def now_dt() -> datetime:
@@ -154,9 +118,7 @@ def parse_iso(text: str | None) -> datetime | None:
 
 def is_due(iso_text: str | None) -> bool:
     dt = parse_iso(iso_text)
-    if dt is None:
-        return False
-    return dt <= now_dt()
+    return dt is not None and dt <= now_dt()
 
 
 def next_review_iso(review_level: int, correct: bool) -> str:
@@ -165,7 +127,7 @@ def next_review_iso(review_level: int, correct: bool) -> str:
     days = ladder[level]
     when = now_dt() + timedelta(days=days)
     if not correct and days == 0:
-        when = now_dt() + timedelta(minutes=15)
+        when = now_dt() + timedelta(minutes=20)
     return when.isoformat(timespec="seconds")
 
 
@@ -209,7 +171,7 @@ def github_fetch_file(path: Path) -> tuple[list[dict[str, Any]], str | None]:
     payload = response.json()
     content = base64.b64decode(payload["content"]).decode("utf-8")
     try:
-        return from_jsonable(json.loads(content)), payload["sha"]
+        return json.loads(content), payload["sha"]
     except json.JSONDecodeError:
         return [], payload["sha"]
 
@@ -219,9 +181,7 @@ def github_save_file(path: Path, data: list[dict[str, Any]]) -> None:
     url = f"{GITHUB_API_BASE}/repos/{secret('GITHUB_REPO')}/contents/{repo_relative_path(path)}"
     body: dict[str, Any] = {
         "message": f"Update {repo_relative_path(path)} from Streamlit app",
-        "content": base64.b64encode(
-            json.dumps(to_jsonable(data), ensure_ascii=False, indent=2).encode("utf-8")
-        ).decode("utf-8"),
+        "content": base64.b64encode(json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")).decode("utf-8"),
         "branch": github_branch(),
     }
     if sha:
@@ -239,14 +199,14 @@ def load_json(path: Path) -> list[dict[str, Any]]:
         except requests.RequestException:
             st.warning("GitHub 永続保存の読み込みに失敗したため、一時ファイルを参照します。")
     try:
-        return from_jsonable(json.loads(path.read_text(encoding="utf-8")))
+        return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return []
 
 
 def save_json(path: Path, data: list[dict[str, Any]]) -> None:
     ensure_data_files()
-    path.write_text(json.dumps(to_jsonable(data), ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     if github_storage_enabled():
         try:
             github_save_file(path, data)
@@ -260,385 +220,28 @@ def append_json(path: Path, item: dict[str, Any]) -> None:
     save_json(path, data)
 
 
-def parse_number(text: str) -> Fraction | None:
-    text = (text or "").strip().replace(" ", "")
-    if not text:
-        return None
-    try:
-        return Fraction(text)
-    except (ValueError, ZeroDivisionError):
-        return None
+def count_by_key(items: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        value = item.get(key)
+        if not value:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: kv[1], reverse=True))
 
 
-def fraction_to_display(value: Fraction) -> str:
-    if value.denominator == 1:
-        return str(value.numerator)
-    return f"{value.numerator}/{value.denominator}"
+def today_minutes(logs: list[dict[str, Any]]) -> int:
+    today_text = str(date.today())
+    return sum(int(item.get("study_minutes", 0)) for item in logs if item.get("date") == today_text)
 
 
-def signed_term(value: int, first: bool = False, variable: str = "") -> str:
-    if value == 0:
-        return ""
-    sign = "-" if value < 0 else "+"
-    abs_value = abs(value)
-    coeff = "" if abs_value == 1 and variable else str(abs_value)
-    term = f"{coeff}{variable}"
-    if first:
-        return term if value > 0 else f"-{term}"
-    return f" {sign} {term}"
-
-
-def quadratic_standard_form(a: int, b: int, c: int) -> str:
-    return f"{signed_term(a, first=True, variable='x^2')}{signed_term(b, variable='x')}{signed_term(c)}"
-
-
-def quadratic_vertex_form(a: int, h: int, k: int) -> str:
-    if h == 0:
-        inner = "x"
-    elif h > 0:
-        inner = f"(x - {h})"
-    else:
-        inner = f"(x + {abs(h)})"
-    k_text = ""
-    if k > 0:
-        k_text = f" + {k}"
-    elif k < 0:
-        k_text = f" - {abs(k)}"
-    a_text = "" if a == 1 else "-" if a == -1 else str(a)
-    return f"{a_text}{inner}^2{k_text}"
-
-
-def format_domain(left: int, right: int) -> str:
-    return f"{left} <= x <= {right}"
-
-
-def choose_weighted(rng: random.Random, items: list[tuple[Any, int]]) -> Any:
-    values = [item[0] for item in items]
-    weights = [item[1] for item in items]
-    return rng.choices(values, weights=weights, k=1)[0]
-
-
-def pick_profile(rng: random.Random, difficulty: str, weak_focus: str, domain_request: str) -> dict[str, Any]:
-    domain_required = domain_request == "定義域あり"
-    domain_free = domain_request == "定義域なし"
-
-    if weak_focus in {"定義域見落とし", "端点比較忘れ", "場合分け忘れ"}:
-        domain_required = True
-    if weak_focus == "軸ミス":
-        domain_request = "おまかせ"
-
-    if domain_free:
-        question_type = "no_domain_single"
-    elif domain_required:
-        question_type = choose_weighted(
-            rng,
-            [
-                ("domain_inside", 1 if weak_focus not in {"端点比較忘れ"} else 0),
-                ("domain_left", 3 if weak_focus in {"定義域見落とし", "端点比較忘れ"} else 2),
-                ("domain_right", 3 if weak_focus in {"定義域見落とし", "端点比較忘れ"} else 2),
-            ],
-        )
-    else:
-        question_type = choose_weighted(
-            rng,
-            [("no_domain_single", 2), ("domain_inside", 2), ("domain_left", 1), ("domain_right", 1)],
-        )
-
-    if difficulty == "基礎":
-        a = choose_weighted(rng, [(1, 2), (-1, 2), (2, 1), (-2, 1)])
-        h = rng.randint(-3, 3)
-        k = rng.randint(-6, 6)
-    elif difficulty == "標準":
-        a = choose_weighted(rng, [(1, 1), (-1, 1), (2, 2), (-2, 2), (3, 1), (-3, 1)])
-        h = rng.randint(-4, 4)
-        k = rng.randint(-8, 8)
-    else:
-        a = choose_weighted(rng, [(2, 2), (-2, 2), (3, 2), (-3, 2), (4, 1), (-4, 1)])
-        h = rng.randint(-5, 5)
-        k = rng.randint(-10, 10)
-
-    if weak_focus == "符号ミス" and a > 0:
-        a *= -1
-
-    return {"question_type": question_type, "a": a, "h": h, "k": k}
-
-
-def make_domain(question_type: str, h: int, difficulty: str, rng: random.Random) -> tuple[int, int] | None:
-    if question_type == "no_domain_single":
-        return None
-
-    span = 3 if difficulty == "基礎" else 4 if difficulty == "標準" else 5
-    if question_type == "domain_inside":
-        left = h - rng.randint(1, span)
-        right = h + rng.randint(1, span)
-    elif question_type == "domain_left":
-        right = h - rng.randint(1, 2)
-        left = right - rng.randint(2, span + 1)
-    else:
-        left = h + rng.randint(1, 2)
-        right = left + rng.randint(2, span + 1)
-    if left == right:
-        right += 2
-    return (left, right) if left < right else (right, left)
-
-
-def build_answer(a: int, h: int, k: int, domain: tuple[int, int] | None) -> dict[str, Any]:
-    if domain is None:
-        extremum_type = "最小値" if a > 0 else "最大値"
-        return {
-            "mode": "single",
-            "extremum_type": extremum_type,
-            "value": Fraction(k),
-            "x": Fraction(h),
-            "axis": Fraction(h),
-            "opens": "上に開く" if a > 0 else "下に開く",
-        }
-
-    left, right = domain
-    left_y = Fraction(a * (left - h) ** 2 + k)
-    right_y = Fraction(a * (right - h) ** 2 + k)
-    vertex_y = Fraction(k)
-    axis_inside = left <= h <= right
-    candidates = [
-        {"x": Fraction(left), "value": left_y, "label": "左端"},
-        {"x": Fraction(right), "value": right_y, "label": "右端"},
-    ]
-    if axis_inside:
-        candidates.append({"x": Fraction(h), "value": vertex_y, "label": "軸"})
-
-    max_item = max(candidates, key=lambda item: item["value"])
-    min_item = min(candidates, key=lambda item: item["value"])
-    return {
-        "mode": "domain_both",
-        "max_value": max_item["value"],
-        "max_x": max_item["x"],
-        "min_value": min_item["value"],
-        "min_x": min_item["x"],
-        "axis": Fraction(h),
-        "axis_inside": axis_inside,
-        "opens": "上に開く" if a > 0 else "下に開く",
-        "left_endpoint": Fraction(left),
-        "right_endpoint": Fraction(right),
-    }
-
-
-def detect_primary_weakness(question: dict[str, Any]) -> str:
-    if question["answer"]["mode"] == "single":
-        if question["a"] < 0:
-            return "符号ミス"
-        return "軸ミス"
-    if not question["answer"]["axis_inside"]:
-        return "端点比較忘れ"
-    if abs(question["a"]) >= 3:
-        return "符号ミス"
-    return "定義域見落とし"
-
-
-def quality_profile(weakness: str) -> dict[str, str]:
-    return QUALITY_BANK.get(
-        weakness,
-        {
-            "focus_prompt": "軸、範囲、比較候補の順で整理する。",
-            "coach": "計算に入る前に『何を比べるか』を決める。",
-            "drill": "基本問題で解法の順番を固定する。",
-        },
-    )
-
-
-def build_explanation_sections(question: dict[str, Any]) -> dict[str, Any]:
-    answer = question["answer"]
-    weakness = question.get("recommended_weakness") or detect_primary_weakness(question)
-    quality = quality_profile(weakness)
-    base_rule = "二次関数は『軸を見て、範囲を見て、頂点と端点のどこを比べるかを決める』の順で考える。"
-    if answer["mode"] == "single":
-        return {
-            "problem_type": f"定義域なしの二次関数の {answer['extremum_type']} 問題。",
-            "overview": [
-                f"{question['function_style']} から軸 x = {fraction_to_display(answer['axis'])} をつかむ。",
-                f"{answer['opens']}ので、頂点がそのまま {answer['extremum_type']} になる。",
-                f"今回の学習テーマ: {quality['focus_prompt']}",
-            ],
-            "steps": [
-                f"軸は x = {fraction_to_display(answer['axis'])}。",
-                f"{answer['opens']}かを確認する。",
-                f"頂点の y 座標 {fraction_to_display(answer['value'])} を読む。",
-                f"答えは {answer['extremum_type']} {fraction_to_display(answer['value'])}、そのとき x = {fraction_to_display(answer['x'])}。",
-                f"なぜこの判断か: {quality['coach']}",
-            ],
-            "judgement": [
-                "定義域がないので端点比較は不要。",
-                "上に開くなら最小、下に開くなら最大を最初に決める。",
-                "解く前に『軸はどこか』『開き方はどちらか』の2問を自分に投げる。",
-            ],
-            "common_mistakes": [
-                "軸の符号を逆に読む。",
-                "最大値と最小値を取り違える。",
-            ],
-            "generalization": base_rule,
-            "checklist": [
-                "軸を書いたか",
-                "上に開くか下に開くか確認したか",
-                "求めるのが最大か最小か一致しているか",
-                quality["drill"],
-            ],
-        }
-
-    axis_phrase = "範囲内" if answer["axis_inside"] else "範囲外"
-    near_phrase = "小さく" if question["a"] > 0 else "大きく"
-    return {
-        "problem_type": "定義域つきの二次関数の最大値・最小値問題。",
-        "overview": [
-            f"軸 x = {fraction_to_display(answer['axis'])} が定義域の {axis_phrase} かを判定する。",
-            "比べるべき点を先に決めてから y 値比較に進む。",
-            f"今回の学習テーマ: {quality['focus_prompt']}",
-        ],
-        "steps": [
-            f"定義域は {format_domain(int(answer['left_endpoint']), int(answer['right_endpoint']))}。",
-            f"軸は x = {fraction_to_display(answer['axis'])}。範囲の中か外かを判定する。",
-            f"{answer['opens']}ので、軸に近い点ほど {near_phrase} なりやすい。",
-            "頂点を使うか端点比較だけで済むかをここで決める。",
-            f"最大値は {fraction_to_display(answer['max_value'])}（x = {fraction_to_display(answer['max_x'])}）、最小値は {fraction_to_display(answer['min_value'])}（x = {fraction_to_display(answer['min_x'])}）。",
-            f"なぜこの判断か: {quality['coach']}",
-        ],
-        "judgement": [
-            "定義域つきでは頂点だけ見て終わらない。",
-            "軸が範囲外なら端点比較が主役になる。",
-            "軸が範囲内なら頂点と端点の役割を分ける。",
-            "比較候補を決める前に計算を始めない。",
-        ],
-        "common_mistakes": [
-            "定義域を見ずに頂点の値をそのまま答える。",
-            "軸が範囲外なのに場合分けをしない。",
-            "端点を片方しか計算しない。",
-        ],
-        "generalization": base_rule,
-        "checklist": [
-            "定義域を書いたか",
-            "軸が範囲内か外か判定したか",
-            "比べる候補を先に決めたか",
-            "頂点と端点を混同していないか",
-            quality["drill"],
-        ],
-    }
-
-
-def render_explanation_sections(sections: dict[str, Any], mode: str) -> None:
-    if mode == "方針だけ":
-        st.write("① 問題の型")
-        st.write(sections["problem_type"])
-        st.write("② 解法の全体像")
-        for item in sections["overview"]:
-            st.write(f"- {item}")
-        return
-
-    if mode == "途中式つき":
-        st.write("① 問題の型")
-        st.write(sections["problem_type"])
-        st.write("② 解法の全体像")
-        for item in sections["overview"]:
-            st.write(f"- {item}")
-        st.write("③ 手順")
-        for item in sections["steps"]:
-            st.write(f"- {item}")
-        return
-
-    st.write("① 問題の型")
-    st.write(sections["problem_type"])
-    st.write("② 解法の全体像")
-    for item in sections["overview"]:
-        st.write(f"- {item}")
-    st.write("③ 手順（詳細）")
-    for item in sections["steps"]:
-        st.write(f"- {item}")
-    st.write("④ 判断ポイント")
-    for item in sections["judgement"]:
-        st.write(f"- {item}")
-    st.write("⑤ よくあるミス")
-    for item in sections["common_mistakes"]:
-        st.write(f"- {item}")
-    st.write("⑥ 一般化（ルール）")
-    st.write(f"- {sections['generalization']}")
-    st.write("- チェックリスト")
-    for item in sections["checklist"]:
-        st.write(f"- {item}")
-
-
-def make_prompt(a: int, h: int, k: int, domain: tuple[int, int] | None, difficulty: str) -> tuple[str, str]:
-    b = -2 * a * h
-    c = a * h * h + k
-    if difficulty == "基礎":
-        style = quadratic_vertex_form(a, h, k)
-        expression = f"f(x) = {style}"
-    else:
-        style = quadratic_standard_form(a, b, c)
-        expression = f"f(x) = {style}"
-
-    if domain is None:
-        if a > 0:
-            prompt = f"次の二次関数の最小値と、そのときの x の値を求めよ。 {expression}"
-        else:
-            prompt = f"次の二次関数の最大値と、そのときの x の値を求めよ。 {expression}"
-    else:
-        left, right = domain
-        if difficulty == "共通テスト風":
-            prompt = (
-                "次の関数について、定義域内での最大値と最小値を求めよ。"
-                f" 必要なら軸の位置と端点を比較して判断すること。 {expression}, {format_domain(left, right)}"
-            )
-        else:
-            prompt = f"次の二次関数について、{format_domain(left, right)} の範囲での最大値と最小値を求めよ。 {expression}"
-    return prompt, expression
-
-
-def generate_quadratic_question(difficulty: str, domain_request: str, weak_focus: str | None = None) -> QuestionBundle:
-    rng = random.Random()
-    profile = pick_profile(rng, difficulty, weak_focus or "", domain_request)
-    a, h, k = profile["a"], profile["h"], profile["k"]
-    domain = make_domain(profile["question_type"], h, difficulty, rng)
-    answer = build_answer(a, h, k, domain)
-    prompt, function_style = make_prompt(a, h, k, domain, difficulty)
-    sections = build_explanation_sections({"answer": answer, "a": a, "function_style": function_style})
-
-    record = {
-        "id": str(uuid.uuid4()),
-        "created_at": now_iso(),
-        "subject": "数学",
-        "topic": "二次関数",
-        "unit": "最大最小",
-        "difficulty": difficulty,
-        "domain_mode": "定義域なし" if domain is None else "定義域あり",
-        "question_type": profile["question_type"],
-        "weak_focus": weak_focus or "",
-        "recommended_weakness": detect_primary_weakness({"a": a, "answer": answer}),
-        "a": a,
-        "h": h,
-        "k": k,
-        "domain": list(domain) if domain else None,
-        "prompt": prompt,
-        "function_style": function_style,
-        "answer": answer,
-        "explanation_sections": sections,
-        "answered": False,
-        "last_result": None,
-        "last_answer": {},
-        "favorite": False,
-        "hold": False,
-        "review_level": 0,
-        "next_review_at": None,
-        "review_count": 0,
-        "source": "generator",
-    }
-    return QuestionBundle(record=record)
-
-
-def recommend_difficulty(questions: list[dict[str, Any]]) -> str:
-    recent = [item for item in sorted(questions, key=lambda x: x["created_at"], reverse=True) if item.get("answered")][:6]
+def recommended_difficulty(questions: list[dict[str, Any]]) -> str:
+    recent = [q for q in sorted(questions, key=lambda x: x["created_at"], reverse=True) if q.get("answered")][:8]
     if not recent:
         return "基礎"
-    correct = sum(1 for item in recent if item.get("last_result") == "correct")
-    ratio = correct / len(recent)
-    if ratio >= 0.8 and len(recent) >= 4:
-        if any(item["difficulty"] == "標準" for item in recent):
+    ratio = sum(1 for q in recent if q.get("last_result") == "correct") / len(recent)
+    if ratio >= 0.8 and len(recent) >= 5:
+        if any(q["difficulty"] == "標準" for q in recent):
             return "共通テスト風"
         return "標準"
     if ratio <= 0.45:
@@ -646,17 +249,360 @@ def recommend_difficulty(questions: list[dict[str, Any]]) -> str:
     return "標準"
 
 
-def generate_question_batch(
-    count: int,
+def shuffle_choices(rng: random.Random, options: list[str], correct_index: int) -> tuple[list[str], int]:
+    pairs = list(enumerate(options))
+    rng.shuffle(pairs)
+    shuffled = [text for _, text in pairs]
+    new_correct = next(i for i, (old_i, _) in enumerate(pairs) if old_i == correct_index)
+    return shuffled, new_correct
+
+
+def make_question_record(
+    *,
+    course: str,
+    unit: str,
+    concept: str,
     difficulty: str,
-    domain_request: str,
-    weak_focus: str | None,
-    existing_questions: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    selected_difficulty = difficulty
-    if difficulty == "自動調整":
-        selected_difficulty = recommend_difficulty(existing_questions or [])
-    return [generate_quadratic_question(selected_difficulty, domain_request, weak_focus).record for _ in range(count)]
+    skill_tag: str,
+    prompt: str,
+    choices: list[str],
+    correct_index: int,
+    answer_text: str,
+    explanation: dict[str, Any],
+    source: str = "curated",
+) -> QuestionBundle:
+    return QuestionBundle(
+        record={
+            "id": str(uuid.uuid4()),
+            "created_at": now_iso(),
+            "subject": "数学",
+            "course": course,
+            "unit": unit,
+            "concept": concept,
+            "difficulty": difficulty,
+            "skill_tag": skill_tag,
+            "prompt": prompt,
+            "choices": choices,
+            "correct_index": correct_index,
+            "answer_text": answer_text,
+            "explanation": explanation,
+            "answered": False,
+            "last_result": None,
+            "last_choice": None,
+            "favorite": False,
+            "hold": False,
+            "review_level": 0,
+            "review_count": 0,
+            "next_review_at": None,
+            "reflection_history": [],
+            "source": source,
+        }
+    )
+
+
+def explain_block(type_text: str, overview: str, steps: list[str], pitfalls: list[str], rule: str) -> dict[str, Any]:
+    return {
+        "type": type_text,
+        "overview": overview,
+        "steps": steps,
+        "pitfalls": pitfalls,
+        "rule": rule,
+    }
+
+
+def gen_quadratic(rng: random.Random, difficulty: str) -> QuestionBundle:
+    a = rng.choice([1, -1, 2, -2, 3, -3] if difficulty != "基礎" else [1, -1, 2, -2])
+    h = rng.randint(-4, 4)
+    k = rng.randint(-6, 6)
+    left = h + rng.choice([-4, -3, -2, 2, 3, 4])
+    right = left + rng.randint(2, 5)
+    if left > right:
+        left, right = right, left
+    axis_inside = left <= h <= right
+    y_h = a * (h - h) ** 2 + k
+    y_l = a * (left - h) ** 2 + k
+    y_r = a * (right - h) ** 2 + k
+    max_value = max(y_h if axis_inside else -10**9, y_l, y_r) if axis_inside else max(y_l, y_r)
+    min_value = min(y_h if axis_inside else 10**9, y_l, y_r) if axis_inside else min(y_l, y_r)
+    prompt = f"関数 f(x) = {a}(x - {h})^2 + {k} について、{left} <= x <= {right} における最小値として正しいものを選べ。"
+    correct = min_value
+    distractors = sorted({correct + d for d in [-6, -3, 3, 6] if correct + d != correct})
+    options = [str(correct)] + [str(x) for x in distractors[:3]]
+    options, correct_index = shuffle_choices(rng, options, 0)
+    return make_question_record(
+        course="数学I",
+        unit="二次関数",
+        concept="最大最小",
+        difficulty=difficulty,
+        skill_tag="定義域見落とし" if not axis_inside else "軸ミス",
+        prompt=prompt,
+        choices=options,
+        correct_index=correct_index,
+        answer_text=str(correct),
+        explanation=explain_block(
+            "定義域つき二次関数の最小値",
+            "軸が範囲内か外かを先に判定し、比べるべき点を決める。",
+            [
+                f"軸は x = {h}。",
+                f"定義域は {left} <= x <= {right} で、軸は {'範囲内' if axis_inside else '範囲外'}。",
+                f"候補点の y 値を比べると最小値は {correct}。",
+            ],
+            ["定義域を見ずに頂点の値をそのまま答える。", "端点を片方しか計算しない。"],
+            "二次関数は『軸確認 -> 範囲判定 -> 候補比較』の順で処理する。",
+        ),
+    )
+
+
+def gen_trig(rng: random.Random, difficulty: str) -> QuestionBundle:
+    angle = rng.choice([30, 45, 60, 120, 135, 150] if difficulty != "基礎" else [30, 45, 60])
+    func = rng.choice(["sin", "cos", "tan"])
+    values = {
+        ("sin", 30): "1/2",
+        ("sin", 45): "√2/2",
+        ("sin", 60): "√3/2",
+        ("sin", 120): "√3/2",
+        ("sin", 135): "√2/2",
+        ("sin", 150): "1/2",
+        ("cos", 30): "√3/2",
+        ("cos", 45): "√2/2",
+        ("cos", 60): "1/2",
+        ("cos", 120): "-1/2",
+        ("cos", 135): "-√2/2",
+        ("cos", 150): "-√3/2",
+        ("tan", 30): "√3/3",
+        ("tan", 45): "1",
+        ("tan", 60): "√3",
+        ("tan", 120): "-√3",
+        ("tan", 135): "-1",
+        ("tan", 150): "-√3/3",
+    }
+    correct = values[(func, angle)]
+    wrong_pool = ["1/2", "√2/2", "√3/2", "1", "√3", "√3/3", "-1/2", "-√2/2", "-√3/2", "-1", "-√3", "-√3/3"]
+    options = [correct] + [v for v in wrong_pool if v != correct][:3]
+    options, correct_index = shuffle_choices(rng, options, 0)
+    return make_question_record(
+        course="数学I",
+        unit="三角比",
+        concept="基本値",
+        difficulty=difficulty,
+        skill_tag="値の暗記不足" if angle <= 60 else "符号ミス",
+        prompt=f"{func}{angle}° の値として正しいものを選べ。",
+        choices=options,
+        correct_index=correct_index,
+        answer_text=correct,
+        explanation=explain_block(
+            "三角比の基本値",
+            "基準角の値と象限による符号を組み合わせて判断する。",
+            [
+                f"{angle}° の基準角を考える。",
+                f"{func} の基本値を取り出す。",
+                "鈍角なら符号を確認する。",
+            ],
+            ["45° と 60° の値を混同する。", "鈍角で符号を反転し忘れる。"],
+            "三角比は『基本値 + 象限の符号』で処理する。",
+        ),
+    )
+
+
+def gen_counting(rng: random.Random, difficulty: str) -> QuestionBundle:
+    n = rng.randint(5, 8)
+    r = rng.randint(2, min(4, n - 1))
+    mode = rng.choice(["順列", "組合せ"])
+    correct = math.perm(n, r) if mode == "順列" else math.comb(n, r)
+    wrongs = []
+    alt = math.comb(n, r) if mode == "順列" else math.perm(n, r)
+    wrongs.append(alt)
+    wrongs.append(correct + rng.randint(2, 8))
+    wrongs.append(max(1, correct - rng.randint(1, 6)))
+    options = [str(correct)] + [str(x) for x in wrongs[:3]]
+    options, correct_index = shuffle_choices(rng, options, 0)
+    return make_question_record(
+        course="数学A",
+        unit="場合の数",
+        concept=mode,
+        difficulty=difficulty,
+        skill_tag="順列組合せの混同",
+        prompt=f"{n} 人から {r} 人を {'並べて選ぶ' if mode == '順列' else '選ぶ'} 方法は何通りか。",
+        choices=options,
+        correct_index=correct_index,
+        answer_text=str(correct),
+        explanation=explain_block(
+            f"{mode} の判定",
+            "並べるかどうかを最初に決める。",
+            [
+                f"『{'順番がある' if mode == '順列' else '順番がない'}』ので {mode} を使う。",
+                f"計算すると {correct} 通り。",
+            ],
+            ["順列と組合せを逆にする。", "意味を見ずに公式だけ選ぶ。"],
+            "場合の数は『順序があるか』を最初に判定する。",
+        ),
+    )
+
+
+def gen_probability(rng: random.Random, difficulty: str) -> QuestionBundle:
+    red = rng.randint(2, 5)
+    blue = rng.randint(2, 5)
+    total = red + blue
+    correct = f"{blue}/{total}" if rng.choice([True, False]) else f"{red}/{total}"
+    target = "青玉" if correct.startswith(str(blue)) else "赤玉"
+    wrongs = [f"{red}/{total}" if target == "青玉" else f"{blue}/{total}", f"1/{total}", f"{abs(red-blue)}/{total}"]
+    options = [correct] + wrongs[:3]
+    options, correct_index = shuffle_choices(rng, options, 0)
+    return make_question_record(
+        course="数学A",
+        unit="確率",
+        concept="基本確率",
+        difficulty=difficulty,
+        skill_tag="全事象の取り違え",
+        prompt=f"赤玉 {red} 個、青玉 {blue} 個が入った袋から 1 個取り出す。{target}が出る確率として正しいものを選べ。",
+        choices=options,
+        correct_index=correct_index,
+        answer_text=correct,
+        explanation=explain_block(
+            "基本確率",
+            "求める確率は『有利な場合 / 全体の場合』で考える。",
+            [f"全体は {total} 通り。", f"{target} が出る有利な場合は {blue if target == '青玉' else red} 通り。", f"よって {correct}。"],
+            ["分母を有利な場合にしてしまう。", "余事象と混同する。"],
+            "確率は『有利 / 全体』を毎回言葉で確認する。",
+        ),
+    )
+
+
+def gen_logarithm(rng: random.Random, difficulty: str) -> QuestionBundle:
+    a = rng.choice([2, 3, 4, 5])
+    b = rng.choice([8, 9, 16, 25, 27, 32])
+    value_map = {(2, 8): "3", (2, 16): "4", (2, 32): "5", (3, 9): "2", (3, 27): "3", (4, 16): "2", (5, 25): "2"}
+    if (a, b) not in value_map:
+        a, b = 2, 8
+    correct = value_map[(a, b)]
+    options = [correct, "1", "2", "4"]
+    options, correct_index = shuffle_choices(rng, options, 0)
+    return make_question_record(
+        course="数学II",
+        unit="指数・対数",
+        concept="対数の性質",
+        difficulty=difficulty,
+        skill_tag="対数法則の混同",
+        prompt=f"log_{a} {b} の値として正しいものを選べ。",
+        choices=options,
+        correct_index=correct_index,
+        answer_text=correct,
+        explanation=explain_block(
+            "対数の定義",
+            "a^x = b を満たす x を考える。",
+            [f"{a}^x = {b} を考える。", f"x = {correct} なので log_{a} {b} = {correct}。"],
+            ["底と真数を逆に読む。", "対数法則を使う前に定義へ戻らない。"],
+            "対数で迷ったら、まず指数の形へ戻す。",
+        ),
+    )
+
+
+def gen_calculus(rng: random.Random, difficulty: str) -> QuestionBundle:
+    a = rng.choice([1, 2, 3])
+    b = rng.randint(-4, 4)
+    c = rng.randint(-3, 3)
+    x0 = rng.randint(-2, 3)
+    slope = 2 * a * x0 + b
+    options = [str(slope), str(slope + 2), str(slope - 2), str(-slope)]
+    options, correct_index = shuffle_choices(rng, options, 0)
+    return make_question_record(
+        course="数学II",
+        unit="微分法",
+        concept="接線の傾き",
+        difficulty=difficulty,
+        skill_tag="微分計算ミス",
+        prompt=f"f(x) = {a}x^2 + {b}x + {c} の x = {x0} における接線の傾きとして正しいものを選べ。",
+        choices=options,
+        correct_index=correct_index,
+        answer_text=str(slope),
+        explanation=explain_block(
+            "導関数の値",
+            "接線の傾きは f'(x) の値で求める。",
+            [f"f'(x) = {2 * a}x + {b}", f"x = {x0} を代入すると {slope}。"],
+            ["微分後に代入し忘れる。", "係数2aを落とす。"],
+            "接線の傾きは『微分してから代入』を徹底する。",
+        ),
+    )
+
+
+def gen_sequence(rng: random.Random, difficulty: str) -> QuestionBundle:
+    first = rng.randint(1, 6)
+    diff = rng.randint(1, 5)
+    n = rng.randint(5, 12)
+    correct = first + (n - 1) * diff
+    options = [str(correct), str(first + n * diff), str(first + (n - 2) * diff), str(first * n)]
+    options, correct_index = shuffle_choices(rng, options, 0)
+    return make_question_record(
+        course="数学B",
+        unit="数列",
+        concept="等差数列",
+        difficulty=difficulty,
+        skill_tag="一般項ミス",
+        prompt=f"初項 {first}、公差 {diff} の等差数列の第 {n} 項として正しいものを選べ。",
+        choices=options,
+        correct_index=correct_index,
+        answer_text=str(correct),
+        explanation=explain_block(
+            "等差数列の一般項",
+            "a_n = a_1 + (n-1)d を使う。",
+            [f"a_{n} = {first} + ({n}-1)×{diff}", f"計算して {correct}。"],
+            ["n-1 を n にしてしまう。", "初項を掛けてしまう。"],
+            "等差数列は『初項 + (n-1)公差』で固定する。",
+        ),
+    )
+
+
+def gen_vector(rng: random.Random, difficulty: str) -> QuestionBundle:
+    ax, ay = rng.randint(-3, 4), rng.randint(-3, 4)
+    bx, by = rng.randint(-3, 4), rng.randint(-3, 4)
+    correct = ax * bx + ay * by
+    options = [str(correct), str(ax + bx + ay + by), str(ax * bx - ay * by), str(abs(correct) + 2)]
+    options, correct_index = shuffle_choices(rng, options, 0)
+    return make_question_record(
+        course="数学B",
+        unit="ベクトル",
+        concept="内積",
+        difficulty=difficulty,
+        skill_tag="符号ミス",
+        prompt=f"a=({ax}, {ay}), b=({bx}, {by}) のとき、a・b として正しいものを選べ。",
+        choices=options,
+        correct_index=correct_index,
+        answer_text=str(correct),
+        explanation=explain_block(
+            "ベクトルの内積",
+            "成分ごとの積を足す。",
+            [f"a・b = {ax}×{bx} + {ay}×{by}", f"計算して {correct}。"],
+            ["足し算だけしてしまう。", "符号を落とす。"],
+            "内積は『対応成分を掛けて足す』を固定する。",
+        ),
+    )
+
+
+GENERATOR_MAP: dict[tuple[str, str], Callable[[random.Random, str], QuestionBundle]] = {
+    ("数学I", "二次関数"): gen_quadratic,
+    ("数学I", "三角比"): gen_trig,
+    ("数学A", "場合の数"): gen_counting,
+    ("数学A", "確率"): gen_probability,
+    ("数学II", "指数・対数"): gen_logarithm,
+    ("数学II", "微分法"): gen_calculus,
+    ("数学B", "数列"): gen_sequence,
+    ("数学B", "ベクトル"): gen_vector,
+}
+
+
+def available_courses() -> list[str]:
+    return list(MATH_CURRICULUM.keys())
+
+
+def available_units(course: str) -> list[str]:
+    return list(MATH_CURRICULUM[course].keys())
+
+
+def generate_questions(course: str, unit: str, difficulty: str, count: int, existing_questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    actual_difficulty = recommended_difficulty(existing_questions) if difficulty == "自動調整" else difficulty
+    generator = GENERATOR_MAP[(course, unit)]
+    rng = random.Random()
+    return [generator(rng, actual_difficulty).record for _ in range(count)]
 
 
 def update_question(updated: dict[str, Any]) -> None:
@@ -674,94 +620,19 @@ def toggle_question_flag(question_id: str, field: str) -> None:
     save_json(QUESTIONS_FILE, questions)
 
 
-def classify_mistake(question: dict[str, Any], user_input: dict[str, str]) -> tuple[str, str, str]:
-    answer = question["answer"]
-    broad = "解法ミス"
-    weakness = question.get("recommended_weakness") or "軸ミス"
-    note = "比較の手順を整理し直すと安定します。"
-
-    if answer["mode"] == "single":
-        user_x = parse_number(user_input.get("x", ""))
-        if user_x is not None and user_x == -answer["axis"]:
-            broad = "計算ミス"
-            weakness = "軸ミス"
-            note = "軸の符号を逆に読んだ可能性があります。"
-        elif question["a"] < 0:
-            broad = "条件見落とし"
-            weakness = "符号ミス"
-            note = "下に開く放物線なので最大値を考える必要があります。"
-        return broad, weakness, note
-
-    if not answer["axis_inside"]:
-        broad = "条件見落とし"
-        weakness = "定義域見落とし"
-        note = "軸が範囲外なので、頂点ではなく端点比較が必要です。"
-    else:
-        broad = "解法ミス"
-        weakness = "場合分け忘れ"
-        note = "軸が範囲内なので、頂点と端点の役割を分けて考えると整理できます。"
-    return broad, weakness, note
-
-
-def evaluate_answer(question: dict[str, Any], user_input: dict[str, str]) -> tuple[bool, str, dict[str, Any] | None]:
-    answer = question["answer"]
-    if answer["mode"] == "single":
-        value = parse_number(user_input.get("value", ""))
-        x_value = parse_number(user_input.get("x", ""))
-        correct = value == answer["value"] and x_value == answer["x"]
-        feedback = (
-            f"正解です。{answer['extremum_type']}は {fraction_to_display(answer['value'])}、そのとき x = {fraction_to_display(answer['x'])}。"
-            if correct
-            else f"今回は不正解です。{answer['extremum_type']}は {fraction_to_display(answer['value'])}、そのとき x = {fraction_to_display(answer['x'])}。"
-        )
-    else:
-        max_value = parse_number(user_input.get("max_value", ""))
-        max_x = parse_number(user_input.get("max_x", ""))
-        min_value = parse_number(user_input.get("min_value", ""))
-        min_x = parse_number(user_input.get("min_x", ""))
-        correct = (
-            max_value == answer["max_value"]
-            and max_x == answer["max_x"]
-            and min_value == answer["min_value"]
-            and min_x == answer["min_x"]
-        )
-        feedback = (
-            "正解です。"
-            f" 最大値は {fraction_to_display(answer['max_value'])}（x = {fraction_to_display(answer['max_x'])}）、"
-            f"最小値は {fraction_to_display(answer['min_value'])}（x = {fraction_to_display(answer['min_x'])}）。"
-            if correct
-            else "今回は不正解です。"
-            f" 最大値は {fraction_to_display(answer['max_value'])}（x = {fraction_to_display(answer['max_x'])}）、"
-            f"最小値は {fraction_to_display(answer['min_value'])}（x = {fraction_to_display(answer['min_x'])}）。"
-        )
-
+def evaluate_multiple_choice(question: dict[str, Any], selected_index: int) -> tuple[bool, str]:
+    correct = selected_index == int(question["correct_index"])
     if correct:
-        return True, feedback, None
-
-    broad, weakness, note = classify_mistake(question, user_input)
-    mistake = {
-        "id": str(uuid.uuid4()),
-        "created_at": now_iso(),
-        "question_id": question["id"],
-        "topic": question["topic"],
-        "unit": question["unit"],
-        "difficulty": question["difficulty"],
-        "problem": question["prompt"],
-        "my_answer": user_input,
-        "correct_answer": answer,
-        "mistake_content": note,
-        "mistake_category": broad,
-        "weakness_tag": weakness,
-    }
-    return False, feedback, mistake
+        return True, f"正解です。正答は {question['answer_text']} です。"
+    return False, f"今回は不正解です。正答は {question['answer_text']} です。"
 
 
-def apply_answer_result(question: dict[str, Any], correct: bool, user_input: dict[str, str]) -> dict[str, Any]:
+def apply_answer_result(question: dict[str, Any], correct: bool, selected_index: int) -> dict[str, Any]:
     current_level = int(question.get("review_level", 0))
     new_level = min(current_level + 1, len(REVIEW_INTERVALS_CORRECT) - 1) if correct else 0
     question["answered"] = True
     question["last_result"] = "correct" if correct else "incorrect"
-    question["last_answer"] = user_input
+    question["last_choice"] = selected_index
     question["answered_at"] = now_iso()
     question["review_level"] = new_level
     question["review_count"] = int(question.get("review_count", 0)) + 1
@@ -771,6 +642,24 @@ def apply_answer_result(question: dict[str, Any], correct: bool, user_input: dic
     return question
 
 
+def build_mistake(question: dict[str, Any], selected_index: int) -> dict[str, Any]:
+    chosen = question["choices"][selected_index]
+    return {
+        "id": str(uuid.uuid4()),
+        "created_at": now_iso(),
+        "question_id": question["id"],
+        "course": question["course"],
+        "unit": question["unit"],
+        "concept": question["concept"],
+        "difficulty": question["difficulty"],
+        "problem": question["prompt"],
+        "my_answer": chosen,
+        "correct_answer": question["answer_text"],
+        "mistake_category": "選択式の誤答",
+        "skill_tag": question["skill_tag"],
+    }
+
+
 def save_reflection(question_id: str, reflection: dict[str, Any]) -> None:
     questions = load_json(QUESTIONS_FILE)
     for item in questions:
@@ -778,138 +667,60 @@ def save_reflection(question_id: str, reflection: dict[str, Any]) -> None:
             history = item.get("reflection_history", [])
             history.append(reflection)
             item["reflection_history"] = history
-            item["last_reflection"] = reflection
             break
     save_json(QUESTIONS_FILE, questions)
 
 
-def build_reflection_insight(questions: list[dict[str, Any]]) -> str:
-    reflections = []
-    for item in questions:
-        reflections.extend(item.get("reflection_history", []))
-    if not reflections:
-        return "まだ振り返りデータが少ないので、解いたあとに任意の質問へ答えると分析が深くなります。"
-
-    hardest_counts = count_by_key(reflections, "hardest_step", REFLECTION_STEPS)
-    top_step = next((k for k, v in hardest_counts.items() if v > 0), None)
-    avg_conf = sum(int(r.get("confidence", 0)) for r in reflections) / max(1, len(reflections))
-    if top_step:
-        return f"振り返りでは『{top_step}』で詰まりやすい傾向です。平均自信度は {avg_conf:.1f}/5 です。"
-    return f"振り返りの平均自信度は {avg_conf:.1f}/5 です。"
-
-
 def compute_accuracy(questions: list[dict[str, Any]]) -> float:
-    answered = [item for item in questions if item.get("answered")]
+    answered = [q for q in questions if q.get("answered")]
     if not answered:
         return 0.0
-    correct = sum(1 for item in answered if item.get("last_result") == "correct")
-    return correct / len(answered)
+    return sum(1 for q in answered if q.get("last_result") == "correct") / len(answered)
 
 
-def count_by_key(items: list[dict[str, Any]], key: str, allowed: list[str] | None = None) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for item in items:
-        value = item.get(key)
-        if not value:
-            continue
-        counts[value] = counts.get(value, 0) + 1
-    if allowed:
-        for value in allowed:
-            counts.setdefault(value, 0)
-    return dict(sorted(counts.items(), key=lambda kv: kv[1], reverse=True))
+def build_reflection_insight(questions: list[dict[str, Any]]) -> str:
+    reflections = []
+    for q in questions:
+        reflections.extend(q.get("reflection_history", []))
+    if not reflections:
+        return "振り返りデータはまだ少なめです。解いたあとに任意の質問へ答えると分析が深くなります。"
+    step_counts = count_by_key(reflections, "hardest_step")
+    top = next(iter(step_counts), "")
+    avg = sum(int(r.get("confidence", 0)) for r in reflections) / len(reflections)
+    return f"振り返りでは『{top}』で詰まりやすい傾向です。平均自信度は {avg:.1f}/5 です。"
 
 
-def today_minutes(logs: list[dict[str, Any]]) -> int:
-    today_text = str(date.today())
-    return sum(int(item.get("study_minutes", 0)) for item in logs if item.get("date") == today_text)
-
-
-def compute_focus_correlation(logs: list[dict[str, Any]]) -> str:
-    if not logs:
-        return "まだ学習ログが少ないので、集中度と学習時間の相性はこれから見えてきます。"
-
-    best_focus = max(logs, key=lambda item: (int(item.get("focus", 0)), int(item.get("study_minutes", 0))))
-    buckets = {"短時間": [], "中時間": [], "長時間": []}
-    for item in logs:
-        minutes = int(item.get("study_minutes", 0))
-        if minutes <= 25:
-            buckets["短時間"].append(int(item.get("focus", 0)))
-        elif minutes <= 50:
-            buckets["中時間"].append(int(item.get("focus", 0)))
-        else:
-            buckets["長時間"].append(int(item.get("focus", 0)))
-
-    def average(values: list[int]) -> float:
-        return sum(values) / len(values) if values else 0.0
-
-    best_bucket = max(buckets.items(), key=lambda kv: average(kv[1]))[0]
-    return (
-        f"集中度が高かった記録では {best_focus.get('unit') or best_focus.get('subject')} を {best_focus.get('study_minutes', 0)} 分行っています。"
-        f" ざっくり見ると {best_bucket} の学習が安定しやすい傾向です。"
-    )
-
-
-def weak_point_rates(mistakes: list[dict[str, Any]], questions: list[dict[str, Any]]) -> dict[str, int]:
-    answered = max(1, sum(1 for item in questions if item.get("answered")))
-    counts = count_by_key(mistakes, "weakness_tag", WEAKNESS_TAGS)
-    return {key: int(counts.get(key, 0) * 100 / answered) for key in WEAKNESS_TAGS}
-
-
-def select_video_recommendations(top_weakness: str | None, difficulty: str) -> list[dict[str, str]]:
-    matches = []
-    for item in YOUTUBE_RECOMMENDATIONS:
-        weakness_hit = top_weakness is None or top_weakness in item["focus"]
-        difficulty_hit = difficulty in item["difficulty"] or not difficulty
-        if weakness_hit and difficulty_hit:
-            matches.append(item)
-    return matches or YOUTUBE_RECOMMENDATIONS[:3]
+def select_videos(course: str, unit: str) -> list[tuple[str, str]]:
+    return MATH_CURRICULUM[course][unit]["videos"]
 
 
 def build_analysis(logs: list[dict[str, Any]], mistakes: list[dict[str, Any]], questions: list[dict[str, Any]]) -> dict[str, Any]:
     accuracy = compute_accuracy(questions)
-    mistake_ranking = count_by_key(mistakes, "mistake_category", MISTAKE_CATEGORIES)
-    weakness_ranking = count_by_key(mistakes, "weakness_tag", WEAKNESS_TAGS)
-    top_weakness = next((key for key, value in weakness_ranking.items() if value > 0), None)
-    recent = sorted(questions, key=lambda item: item["created_at"], reverse=True)[:5]
-    due_reviews = [item for item in questions if is_due(item.get("next_review_at"))]
-    favorite_questions = [item for item in questions if item.get("favorite")]
-    hold_questions = [item for item in questions if item.get("hold")]
-    recommended_difficulty = recommend_difficulty(questions)
-
-    if top_weakness == "定義域見落とし":
-        next_action = "定義域つきで、軸が範囲外になる問題を 10 問解く。"
-    elif top_weakness == "軸ミス":
-        next_action = "軸を先に書き出す練習を入れたうえで、標準形から頂点を取る問題を 8 問解く。"
-    elif top_weakness == "場合分け忘れ":
-        next_action = "軸が範囲内か外かを毎回判定するチェックを入れて、定義域ありの問題を 8 問解く。"
-    elif top_weakness == "符号ミス":
-        next_action = "上に開くか下に開くかを先に言語化しながら、符号が混ざる問題を 8 問解く。"
-    elif top_weakness == "端点比較忘れ":
-        next_action = "端点比較を必ず式で残しながら、軸が範囲外の問題を 10 問解く。"
-    else:
-        next_action = "基礎と標準を交互に解いて、解法の型を安定させる。"
-
-    summary = "学習データがまだ少ないため、まず 5 問ほど解いて傾向を固める。"
-    if top_weakness:
-        summary = f"{top_weakness} が最も多いです。次はそのパターンに絞って演習すると改善効率が高いです。"
-
+    due_reviews = [q for q in questions if is_due(q.get("next_review_at"))]
+    unit_ranking = count_by_key(mistakes, "unit")
+    skill_ranking = count_by_key(mistakes, "skill_tag")
+    course_ranking = count_by_key(mistakes, "course")
+    favorites = [q for q in questions if q.get("favorite")]
+    holds = [q for q in questions if q.get("hold")]
+    top_unit = next(iter(unit_ranking), None)
+    top_skill = next(iter(skill_ranking), None)
+    suggestion = "まずは基礎難度で 5 問ほど解いてデータをためる。"
+    if top_unit and top_skill:
+        suggestion = f"{top_unit} の {top_skill} が弱点です。次はその単元に絞って 5 問解きましょう。"
     return {
         "today_minutes": today_minutes(logs),
         "accuracy": accuracy,
-        "mistake_ranking": mistake_ranking,
-        "weakness_ranking": weakness_ranking,
-        "weak_rates": weak_point_rates(mistakes, questions),
-        "top_weakness": top_weakness,
-        "next_action": next_action,
-        "summary": summary,
-        "recent_questions": recent,
         "due_reviews": due_reviews,
-        "favorite_questions": favorite_questions,
-        "hold_questions": hold_questions,
-        "recommended_difficulty": recommended_difficulty,
-        "focus_correlation": compute_focus_correlation(logs),
+        "unit_ranking": unit_ranking,
+        "skill_ranking": skill_ranking,
+        "course_ranking": course_ranking,
+        "favorites": favorites,
+        "holds": holds,
+        "recommended_difficulty": recommended_difficulty(questions),
         "reflection_insight": build_reflection_insight(questions),
-        "videos": select_video_recommendations(top_weakness, recommended_difficulty),
+        "suggestion": suggestion,
+        "top_unit": top_unit,
+        "top_skill": top_skill,
     }
 
 
@@ -927,11 +738,11 @@ def app_css() -> None:
         <style>
         .stApp {
             background:
-                radial-gradient(circle at top right, rgba(15,118,110,0.12), transparent 28%),
-                linear-gradient(180deg, #f7f4ea 0%, #eef6ff 100%);
+                radial-gradient(circle at top right, rgba(22,101,52,0.10), transparent 28%),
+                linear-gradient(180deg, #faf7ef 0%, #eef6ff 100%);
         }
         .block-container {
-            max-width: 760px;
+            max-width: 780px;
             padding-top: 1rem;
             padding-bottom: 4rem;
         }
@@ -941,19 +752,10 @@ def app_css() -> None:
                 padding-right: 0.8rem;
                 padding-top: 0.6rem;
             }
-            .stTabs [data-baseweb="tab-list"] {
-                gap: 0.25rem;
-                overflow-x: auto;
-            }
             .stTabs [data-baseweb="tab"] {
                 height: 3rem;
                 white-space: nowrap;
-                padding-left: 0.8rem;
-                padding-right: 0.8rem;
             }
-        }
-        h1, h2, h3 {
-            letter-spacing: -0.02em;
         }
         .stButton > button, div[data-baseweb="button"] > button {
             width: 100%;
@@ -961,14 +763,11 @@ def app_css() -> None:
             border-radius: 16px;
             font-weight: 700;
             border: none;
-            background: #0f766e;
+            background: #166534;
             color: white;
         }
-        .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
-            border-radius: 14px;
-        }
-        div[data-testid="stMetricValue"] {
-            font-size: 1.4rem;
+        .stRadio label {
+            line-height: 1.35;
         }
         </style>
         """,
@@ -977,7 +776,7 @@ def app_css() -> None:
 
 
 def init_page() -> None:
-    st.set_page_config(page_title=APP_TITLE, page_icon="📘", layout="centered")
+    st.set_page_config(page_title=APP_TITLE, page_icon="📗", layout="centered")
     app_css()
     ensure_data_files()
 
@@ -989,60 +788,29 @@ def render_storage_status() -> None:
         st.warning("保存モード: 一時ファイル。永続化するには Streamlit secrets に GitHub 設定を追加してください。")
 
 
-def render_quick_actions(analysis: dict[str, Any], questions: list[dict[str, Any]]) -> None:
-    with st.container(border=True):
-        st.write("今すぐやること")
-        st.write(f"- 推奨難易度: {analysis['recommended_difficulty']}")
-        st.write(f"- 復習キュー: {len(analysis['due_reviews'])} 問")
-        st.write(f"- お気に入り: {len(analysis['favorite_questions'])} 問")
-        st.write(f"- 保留: {len(analysis['hold_questions'])} 問")
-        if st.button("復習キューを 3 問追加する"):
-            due = analysis["due_reviews"][:3]
-            if due:
-                cloned = []
-                for item in due:
-                    new_item = dict(item)
-                    new_item["id"] = str(uuid.uuid4())
-                    new_item["created_at"] = now_iso()
-                    new_item["source"] = "review_queue"
-                    new_item["answered"] = False
-                    new_item["last_result"] = None
-                    new_item["last_answer"] = {}
-                    new_item["hold"] = False
-                    cloned.append(new_item)
-                questions.extend(cloned)
-                save_json(QUESTIONS_FILE, questions)
-                st.success("復習用に 3 問追加しました。")
-                st.rerun()
-            st.info("今は復習期限が来ている問題がありません。")
-
-
-def render_home(logs: list[dict[str, Any]], mistakes: list[dict[str, Any]], questions: list[dict[str, Any]], analysis: dict[str, Any]) -> None:
+def render_home(logs: list[dict[str, Any]], questions: list[dict[str, Any]], analysis: dict[str, Any]) -> None:
     st.subheader("今日の状況")
-    col1, col2 = st.columns(2)
-    with col1:
+    c1, c2 = st.columns(2)
+    with c1:
         render_metric_card("学習時間", f"{analysis['today_minutes']} 分")
-    with col2:
+    with c2:
         render_metric_card("正答率", f"{int(analysis['accuracy'] * 100)}%")
-
-    col3, col4 = st.columns(2)
-    with col3:
+    c3, c4 = st.columns(2)
+    with c3:
         render_metric_card("復習キュー", f"{len(analysis['due_reviews'])} 問")
-    with col4:
+    with c4:
         render_metric_card("次の難易度", analysis["recommended_difficulty"])
-
-    render_metric_card("弱点", analysis["top_weakness"] or "まだ分析中", analysis["summary"])
-    render_metric_card("次にやること", analysis["next_action"])
-    render_quick_actions(analysis, questions)
+    render_metric_card("次にやること", analysis["suggestion"])
+    render_metric_card("振り返り分析", analysis["reflection_insight"])
 
     with st.expander("学習ログを追加", expanded=False):
         with st.form("study_log_form", clear_on_submit=True):
             log_date = st.date_input("日付", value=date.today())
-            subject = st.selectbox("科目", SUBJECTS)
-            unit = st.text_input("単元", placeholder="二次関数 / 英文法 など")
+            course = st.selectbox("分野", available_courses())
+            unit = st.selectbox("単元", available_units(course))
             study_minutes = st.number_input("学習時間（分）", min_value=0, max_value=600, value=30, step=10)
             focus = st.slider("集中度", 1, 5, 3)
-            content = st.text_area("内容", placeholder="短く話すように入れてOK。スマホの音声キーボードとも相性が良いです。")
+            content = st.text_area("内容", placeholder="何を勉強したかを短く")
             submitted = st.form_submit_button("学習ログを保存")
             if submitted:
                 append_json(
@@ -1051,7 +819,8 @@ def render_home(logs: list[dict[str, Any]], mistakes: list[dict[str, Any]], ques
                         "id": str(uuid.uuid4()),
                         "created_at": now_iso(),
                         "date": str(log_date),
-                        "subject": subject,
+                        "subject": "数学",
+                        "course": course,
                         "unit": unit,
                         "study_minutes": int(study_minutes),
                         "focus": focus,
@@ -1061,188 +830,115 @@ def render_home(logs: list[dict[str, Any]], mistakes: list[dict[str, Any]], ques
                 st.success("学習ログを保存しました。")
                 st.rerun()
 
-    with st.expander("ミスを手動で記録", expanded=False):
-        with st.form("manual_mistake_form", clear_on_submit=True):
-            problem = st.text_area("問題")
-            my_answer = st.text_area("自分の解答")
-            correct_answer = st.text_area("正答")
-            mistake_content = st.text_area("ミス内容", placeholder="何をどう間違えたか")
-            category = st.selectbox("ミス分類", MISTAKE_CATEGORIES)
-            weakness = st.selectbox("苦手パターン", WEAKNESS_TAGS)
-            submitted = st.form_submit_button("ミスを保存")
-            if submitted:
-                append_json(
-                    MISTAKES_FILE,
-                    {
-                        "id": str(uuid.uuid4()),
-                        "created_at": now_iso(),
-                        "question_id": "",
-                        "topic": "二次関数",
-                        "unit": "最大最小",
-                        "difficulty": "",
-                        "problem": problem,
-                        "my_answer": my_answer,
-                        "correct_answer": correct_answer,
-                        "mistake_content": mistake_content,
-                        "mistake_category": category,
-                        "weakness_tag": weakness,
-                    },
-                )
-                st.success("ミス記録を保存しました。")
-                st.rerun()
-
-    with st.container(border=True):
-        st.write("学習時間との相性")
-        st.write(analysis["focus_correlation"])
+    st.subheader("数学I・A・II・B の対応範囲")
+    for course, units in MATH_CURRICULUM.items():
+        with st.container(border=True):
+            st.write(course)
+            st.write("・" + " / ".join(units.keys()))
 
     st.subheader("最近の問題")
-    recent = sorted(questions, key=lambda item: item["created_at"], reverse=True)[:4]
+    recent = sorted(questions, key=lambda q: q["created_at"], reverse=True)[:4]
     if not recent:
         st.info("まだ問題がありません。『問題生成』タブから作成してください。")
-    for item in recent:
+    for q in recent:
         with st.container(border=True):
-            badge = []
-            if item.get("favorite"):
-                badge.append("お気に入り")
-            if item.get("hold"):
-                badge.append("保留")
-            if is_due(item.get("next_review_at")):
-                badge.append("復習期限")
-            st.write(item["prompt"])
-            st.caption(f"{item['difficulty']} / {item['domain_mode']} / 推奨補強: {item['recommended_weakness']} {' / '.join(badge)}")
-            if item.get("last_result"):
-                st.write(f"直近結果: {'正解' if item['last_result'] == 'correct' else '不正解'}")
+            st.write(q["prompt"])
+            st.caption(f"{q['course']} / {q['unit']} / {q['difficulty']} / 分析軸: {q['skill_tag']}")
 
 
-def render_video_recommendations(analysis: dict[str, Any]) -> None:
-    st.subheader("おすすめ解説")
-    videos = analysis["videos"]
-    featured = videos[0]
-    st.video(featured["url"])
-    st.caption(f"{featured['title']} - {featured['reason']}")
-    for item in videos:
-        st.write(f"- [{item['title']}]({item['url']})")
-        st.caption(item["reason"])
-
-
-def render_problem_tab(logs: list[dict[str, Any]], mistakes: list[dict[str, Any]], questions: list[dict[str, Any]], analysis: dict[str, Any]) -> None:
+def render_problem_tab(questions: list[dict[str, Any]], analysis: dict[str, Any]) -> None:
     st.subheader("問題生成")
-    with st.container(border=True):
-        st.write("学習モード")
-        st.write("- 利用可能: 数学（二次関数の最大最小）")
-        st.write(f"- 追加予定: {', '.join(COMING_SOON_SUBJECTS)}")
-        st.write("- 将来拡張しやすいように、科目ごとの保存構造は先に入れています。")
-
-    with st.form("generate_questions_form"):
-        difficulty = st.selectbox("難易度", DIFFICULTIES_WITH_AUTO, index=0)
-        domain_request = st.selectbox("定義域", DOMAIN_OPTIONS)
-        weak_focus = st.selectbox("苦手対応", ["おまかせ"] + WEAKNESS_TAGS)
-        count = st.slider("問題数", 1, 10, 3)
+    course = st.selectbox("科目群", available_courses(), key="course_generate")
+    unit = st.selectbox("単元", available_units(course), key="unit_generate")
+    difficulty = st.selectbox("難易度", DIFFICULTIES, index=0)
+    count = st.slider("問題数", 1, 10, 3)
+    with st.form("generate_form"):
         submitted = st.form_submit_button("問題を生成する")
         if submitted:
-            generated = generate_question_batch(
-                count=count,
-                difficulty=difficulty,
-                domain_request=domain_request,
-                weak_focus=None if weak_focus == "おまかせ" else weak_focus,
-                existing_questions=questions,
-            )
+            generated = generate_questions(course, unit, difficulty, count, questions)
             questions.extend(generated)
             save_json(QUESTIONS_FILE, questions)
-            picked_difficulty = generated[0]["difficulty"] if generated else difficulty
-            st.success(f"{count} 問生成しました。今回の難易度は {picked_difficulty} です。")
+            st.success(f"{course} / {unit} の問題を {count} 問追加しました。")
             st.rerun()
 
-    quick_col1, quick_col2 = st.columns(2)
-    with quick_col1:
-        if st.button("弱点に合わせて 5 問作る"):
-            focus = analysis["top_weakness"] or "定義域見落とし"
-            generated = generate_question_batch(5, "自動調整", "定義域あり", focus, questions)
+    if analysis["top_unit"] and analysis["top_unit"] in available_units(course):
+        if st.button(f"弱点の {analysis['top_unit']} を 5 問追加する"):
+            generated = generate_questions(course, analysis["top_unit"], "自動調整", 5, questions)
             questions.extend(generated)
             save_json(QUESTIONS_FILE, questions)
-            st.success("弱点向けに 5 問追加しました。")
-            st.rerun()
-    with quick_col2:
-        if st.button("共通テスト風を 3 問作る"):
-            generated = generate_question_batch(3, "共通テスト風", "定義域あり", analysis["top_weakness"], questions)
-            questions.extend(generated)
-            save_json(QUESTIONS_FILE, questions)
-            st.success("共通テスト風の問題を追加しました。")
+            st.success("弱点単元の問題を追加しました。")
             st.rerun()
 
-    st.subheader("生成済み問題")
-    latest = sorted(load_json(QUESTIONS_FILE), key=lambda item: item["created_at"], reverse=True)[:6]
-    if not latest:
-        st.info("まだ問題はありません。")
-    for item in latest:
+    st.subheader("単元の解説動画")
+    for title, url in select_videos(course, unit):
+        st.write(f"- [{title}]({url})")
+
+    st.subheader("最近の生成問題")
+    latest = sorted(questions, key=lambda q: q["created_at"], reverse=True)[:6]
+    for q in latest:
         with st.container(border=True):
-            st.write(item["prompt"])
-            review_text = "復習キューなし"
-            if item.get("next_review_at"):
-                review_text = f"次回復習: {item['next_review_at'].replace('T', ' ')}"
-            st.caption(
-                f"{item['difficulty']} / {item['domain_mode']} / 苦手対応: {item.get('weak_focus') or 'おまかせ'} / {review_text}"
-            )
-            explanation_mode = st.radio(
-                "解説表示",
-                ["方針だけ", "途中式つき", "完全版"],
-                horizontal=True,
-                key=f"explain_mode_{item['id']}",
-            )
-            with st.expander("解説を見る"):
-                render_explanation_sections(item["explanation_sections"], explanation_mode)
-
-    render_video_recommendations(analysis)
+            st.write(q["prompt"])
+            for i, choice in enumerate(q["choices"]):
+                st.write(f"{chr(65+i)}. {choice}")
 
 
 def filter_question_pool(questions: list[dict[str, Any]], mode: str) -> list[dict[str, Any]]:
-    ordered = sorted(questions, key=lambda item: item["created_at"], reverse=True)
+    ordered = sorted(questions, key=lambda q: q["created_at"], reverse=True)
     if mode == "復習期限だけ":
-        return [item for item in ordered if is_due(item.get("next_review_at"))]
+        return [q for q in ordered if is_due(q.get("next_review_at"))]
     if mode == "お気に入り":
-        return [item for item in ordered if item.get("favorite")]
+        return [q for q in ordered if q.get("favorite")]
     if mode == "保留":
-        return [item for item in ordered if item.get("hold")]
+        return [q for q in ordered if q.get("hold")]
     return ordered
 
 
 def render_question_actions(question: dict[str, Any]) -> None:
-    col1, col2 = st.columns(2)
-    with col1:
-        label = "お気に入り解除" if question.get("favorite") else "お気に入り登録"
-        if st.button(label, key=f"fav_{question['id']}"):
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("お気に入り" if not question.get("favorite") else "お気に入り解除", key=f"fav_{question['id']}"):
             toggle_question_flag(question["id"], "favorite")
             st.rerun()
-    with col2:
-        label = "保留解除" if question.get("hold") else "あとで解く"
-        if st.button(label, key=f"hold_{question['id']}"):
+    with c2:
+        if st.button("あとで解く" if not question.get("hold") else "保留解除", key=f"hold_{question['id']}"):
             toggle_question_flag(question["id"], "hold")
             st.rerun()
 
 
+def render_explanation(question: dict[str, Any]) -> None:
+    exp = question["explanation"]
+    st.write("問題の型")
+    st.write(exp["type"])
+    st.write("解法の全体像")
+    st.write(exp["overview"])
+    st.write("手順")
+    for step in exp["steps"]:
+        st.write(f"- {step}")
+    st.write("よくあるミス")
+    for item in exp["pitfalls"]:
+        st.write(f"- {item}")
+    st.write("一般化ルール")
+    st.write(exp["rule"])
+
+
 def render_reflection_form(question: dict[str, Any]) -> None:
     with st.expander("任意の振り返り質問", expanded=False):
-        st.write("分析を深くするための任意入力です。1分以内で終わります。")
         with st.form(f"reflection_{question['id']}", clear_on_submit=True):
             confidence = st.slider("今回はどれくらい自信がありましたか？", 1, 5, 3)
             hardest_step = st.selectbox("いちばん難しかった工程", ["特になし"] + REFLECTION_STEPS)
-            checked_axis = st.radio("解く前に軸を確認しましたか？", ["はい", "いいえ"], horizontal=True)
-            checked_domain = st.radio("定義域を意識しましたか？", ["はい", "いいえ", "定義域なし"], horizontal=True)
-            checked_endpoints = st.radio("端点比較を意識しましたか？", ["はい", "いいえ", "不要"], horizontal=True)
-            memo = st.text_area("ひとことメモ", placeholder="どこで迷ったか、次回気をつけたいこと")
+            memo = st.text_area("メモ", placeholder="次に気をつけたいこと")
             submitted = st.form_submit_button("振り返りを保存")
             if submitted:
-                reflection = {
-                    "created_at": now_iso(),
-                    "confidence": confidence,
-                    "hardest_step": hardest_step if hardest_step != "特になし" else "",
-                    "checked_axis": checked_axis,
-                    "checked_domain": checked_domain,
-                    "checked_endpoints": checked_endpoints,
-                    "memo": memo,
-                }
-                save_reflection(question["id"], reflection)
-                st.success("振り返りを保存しました。分析に反映されます。")
+                save_reflection(
+                    question["id"],
+                    {
+                        "created_at": now_iso(),
+                        "confidence": confidence,
+                        "hardest_step": "" if hardest_step == "特になし" else hardest_step,
+                        "memo": memo,
+                    },
+                )
+                st.success("振り返りを保存しました。")
                 st.rerun()
 
 
@@ -1252,73 +948,42 @@ def render_answer_tab() -> None:
     if not questions:
         st.info("先に問題を生成してください。")
         return
-
     mode = st.segmented_control("表示", ["すべて", "復習期限だけ", "お気に入り", "保留"], default="すべて")
     pool = filter_question_pool(questions, mode or "すべて")
     if not pool:
         st.info("この条件に合う問題はまだありません。")
         return
-
-    labels = [f"{item['created_at']} | {item['difficulty']} | {item['prompt'][:24]}..." for item in pool]
-    selected_label = st.selectbox("問題を選ぶ", labels)
-    question = pool[labels.index(selected_label)]
+    labels = [f"{q['course']} | {q['unit']} | {q['prompt'][:24]}..." for q in pool]
+    selected = st.selectbox("問題を選ぶ", labels)
+    question = pool[labels.index(selected)]
 
     with st.container(border=True):
         st.write(question["prompt"])
-        st.caption(
-            f"推奨補強: {question['recommended_weakness']} / 次回復習: {question.get('next_review_at') or '未設定'}"
-        )
+        st.caption(f"{question['course']} / {question['unit']} / 分析軸: {question['skill_tag']}")
     render_question_actions(question)
 
-    explanation_mode = st.radio("解説の出し方", ["方針だけ", "途中式つき", "完全版"], horizontal=True)
-    answer = question["answer"]
-    show_reflection = False
-    form_key = f"answer_form_{question['id']}"
-    with st.form(form_key):
-        if answer["mode"] == "single":
-            value = st.text_input("値", placeholder="例: -3 または 5/2")
-            x_value = st.text_input("そのときの x", placeholder="例: 2")
-            submitted = st.form_submit_button("判定する")
-            if submitted:
-                correct, feedback, mistake = evaluate_answer(question, {"value": value, "x": x_value})
-                updated = apply_answer_result(question, correct, {"value": value, "x": x_value})
-                update_question(updated)
-                if mistake:
-                    append_json(MISTAKES_FILE, mistake)
-                if correct:
-                    st.success(feedback)
-                else:
-                    st.error(feedback)
-                with st.expander("解説", expanded=True):
-                    render_explanation_sections(question["explanation_sections"], explanation_mode)
-                show_reflection = True
+    show_reflection = question.get("last_result") is not None
+    choice = st.radio(
+        "選択肢を選ぶ",
+        options=list(range(len(question["choices"]))),
+        format_func=lambda i: f"{chr(65+i)}. {question['choices'][i]}",
+        key=f"choice_{question['id']}",
+    )
+    if st.button("判定する", key=f"submit_{question['id']}"):
+        correct, feedback = evaluate_multiple_choice(question, int(choice))
+        updated = apply_answer_result(question, correct, int(choice))
+        update_question(updated)
+        if not correct:
+            append_json(MISTAKES_FILE, build_mistake(question, int(choice)))
+        if correct:
+            st.success(feedback)
         else:
-            max_value = st.text_input("最大値", placeholder="例: 8")
-            max_x = st.text_input("最大になる x", placeholder="例: -1")
-            min_value = st.text_input("最小値", placeholder="例: -4")
-            min_x = st.text_input("最小になる x", placeholder="例: 2")
-            submitted = st.form_submit_button("判定する")
-            if submitted:
-                user_input = {
-                    "max_value": max_value,
-                    "max_x": max_x,
-                    "min_value": min_value,
-                    "min_x": min_x,
-                }
-                correct, feedback, mistake = evaluate_answer(question, user_input)
-                updated = apply_answer_result(question, correct, user_input)
-                update_question(updated)
-                if mistake:
-                    append_json(MISTAKES_FILE, mistake)
-                if correct:
-                    st.success(feedback)
-                else:
-                    st.error(feedback)
-                with st.expander("解説", expanded=True):
-                    render_explanation_sections(question["explanation_sections"], explanation_mode)
-                show_reflection = True
+            st.error(feedback)
+        with st.expander("解説", expanded=True):
+            render_explanation(question)
+        show_reflection = True
 
-    if show_reflection or question.get("last_result") is not None:
+    if show_reflection:
         render_reflection_form(question)
 
 
@@ -1327,72 +992,47 @@ def render_analysis_tab(logs: list[dict[str, Any]], mistakes: list[dict[str, Any
     analysis = build_analysis(logs, mistakes, questions)
     if st.button("分析を更新"):
         st.rerun()
-
-    st.write(analysis["summary"])
-    st.write(f"次の学習提案: {analysis['next_action']}")
-
+    st.write(analysis["suggestion"])
     with st.container(border=True):
-        st.write("弱点率")
-        for key, value in analysis["weak_rates"].items():
-            st.write(f"- {key}: {value}%")
-
-    with st.container(border=True):
-        st.write("ミス分類ランキング")
-        for key, value in analysis["mistake_ranking"].items():
+        st.write("コース別ミスランキング")
+        for key, value in analysis["course_ranking"].items():
             st.write(f"- {key}: {value}")
-
     with st.container(border=True):
-        st.write("苦手ランキング")
-        for key, value in analysis["weakness_ranking"].items():
+        st.write("単元別ミスランキング")
+        for key, value in analysis["unit_ranking"].items():
             st.write(f"- {key}: {value}")
-
     with st.container(border=True):
-        st.write("おすすめの次の難易度")
-        st.write(f"- {analysis['recommended_difficulty']}")
-        st.write("- 正答率と最近の流れから自動で提案しています。")
-
+        st.write("技能別ランキング")
+        for key, value in analysis["skill_ranking"].items():
+            st.write(f"- {key}: {value}")
     with st.container(border=True):
         st.write("振り返り分析")
         st.write(analysis["reflection_insight"])
-
-    st.subheader("類題生成")
-    recommended_focus = analysis["top_weakness"] or "定義域見落とし"
-    if st.button(f"{recommended_focus} 向けに 3 問生成する"):
-        generated = generate_question_batch(3, "自動調整", "定義域あり", recommended_focus, questions)
-        existing = load_json(QUESTIONS_FILE)
-        existing.extend(generated)
-        save_json(QUESTIONS_FILE, existing)
-        st.success("類題を追加しました。『解答』タブから解けます。")
-        st.rerun()
-
     if analysis["due_reviews"]:
         st.subheader("復習期限が来た問題")
-        for item in analysis["due_reviews"][:3]:
+        for q in analysis["due_reviews"][:4]:
             with st.container(border=True):
-                st.write(item["prompt"])
-                st.caption(f"{item['difficulty']} / 前回結果: {item.get('last_result') or '未解答'}")
-
-    render_video_recommendations(analysis)
+                st.write(q["prompt"])
+                st.caption(f"{q['course']} / {q['unit']} / 前回結果: {q.get('last_result')}")
 
 
 def main() -> None:
     init_page()
-
     logs = load_json(LOGS_FILE)
     mistakes = load_json(MISTAKES_FILE)
     questions = load_json(QUESTIONS_FILE)
     analysis = build_analysis(logs, mistakes, questions)
 
     st.title(APP_TITLE)
-    st.caption("問題生成 → 解答 → ミス分析 → 類題生成 → 自動改善 を回す、スマホ向け学習改善アプリ")
+    st.caption("数学I・A・II・B 専用の、選択式ベース学習最適化アプリ")
     render_storage_status()
-    st.caption("スマホではブラウザの『ホーム画面に追加』を使うと、アプリのように開きやすくなります。")
+    st.caption("現在は数学専用です。記述式ではなく、スマホで解きやすい4択中心で構成しています。")
 
     tabs = st.tabs(["ホーム", "問題生成", "解答", "分析"])
     with tabs[0]:
-        render_home(logs, mistakes, questions, analysis)
+        render_home(logs, questions, analysis)
     with tabs[1]:
-        render_problem_tab(logs, mistakes, questions, analysis)
+        render_problem_tab(questions, analysis)
     with tabs[2]:
         render_answer_tab()
     with tabs[3]:
