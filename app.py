@@ -20,6 +20,7 @@ DATA_DIR = Path("data")
 LOGS_FILE = DATA_DIR / "logs.json"
 MISTAKES_FILE = DATA_DIR / "mistakes.json"
 QUESTIONS_FILE = DATA_DIR / "questions.json"
+BANK_FILE = DATA_DIR / "question_bank.json"
 
 GITHUB_API_BASE = "https://api.github.com"
 DIFFICULTIES = ["自動調整", "基礎", "標準", "共通テスト風"]
@@ -97,6 +98,8 @@ def ensure_data_files() -> None:
     for path in [LOGS_FILE, MISTAKES_FILE, QUESTIONS_FILE]:
         if not path.exists():
             path.write_text("[]", encoding="utf-8")
+    if not BANK_FILE.exists():
+        BANK_FILE.write_text("[]", encoding="utf-8")
 
 
 def now_dt() -> datetime:
@@ -269,6 +272,7 @@ def make_question_record(
     correct_index: int,
     answer_text: str,
     explanation: dict[str, Any],
+    option_notes: list[str] | None = None,
     source: str = "curated",
 ) -> QuestionBundle:
     return QuestionBundle(
@@ -286,6 +290,7 @@ def make_question_record(
             "correct_index": correct_index,
             "answer_text": answer_text,
             "explanation": explanation,
+            "option_notes": option_notes or [],
             "answered": False,
             "last_result": None,
             "last_choice": None,
@@ -598,11 +603,66 @@ def available_units(course: str) -> list[str]:
     return list(MATH_CURRICULUM[course].keys())
 
 
+def load_question_bank() -> list[dict[str, Any]]:
+    return load_json(BANK_FILE)
+
+
+def normalize_bank_question(item: dict[str, Any], difficulty: str) -> dict[str, Any]:
+    record = {
+        "id": str(uuid.uuid4()),
+        "created_at": now_iso(),
+        "subject": "数学",
+        "course": item["course"],
+        "unit": item["unit"],
+        "concept": item["concept"],
+        "difficulty": difficulty,
+        "skill_tag": item["skill_tag"],
+        "prompt": item["prompt"],
+        "choices": item["choices"],
+        "correct_index": item["correct_index"],
+        "answer_text": item["answer_text"],
+        "explanation": item["explanation"],
+        "option_notes": item.get("option_notes", []),
+        "answered": False,
+        "last_result": None,
+        "last_choice": None,
+        "favorite": False,
+        "hold": False,
+        "review_level": 0,
+        "review_count": 0,
+        "next_review_at": None,
+        "reflection_history": [],
+        "source": item.get("source", "question_bank"),
+        "quality_label": item.get("quality_label", "high"),
+    }
+    return record
+
+
+def bank_candidates(course: str, unit: str, difficulty: str) -> list[dict[str, Any]]:
+    pool = []
+    for item in load_question_bank():
+        if item.get("course") != course or item.get("unit") != unit:
+            continue
+        levels = item.get("difficulty", [])
+        if isinstance(levels, str):
+            levels = [levels]
+        if difficulty in levels or not levels:
+            pool.append(item)
+    return pool
+
+
 def generate_questions(course: str, unit: str, difficulty: str, count: int, existing_questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     actual_difficulty = recommended_difficulty(existing_questions) if difficulty == "自動調整" else difficulty
-    generator = GENERATOR_MAP[(course, unit)]
     rng = random.Random()
-    return [generator(rng, actual_difficulty).record for _ in range(count)]
+    bank = bank_candidates(course, unit, actual_difficulty)
+    selected: list[dict[str, Any]] = []
+    if bank:
+        sampled = rng.sample(bank, k=min(count, len(bank)))
+        selected.extend([normalize_bank_question(item, actual_difficulty) for item in sampled])
+    if len(selected) < count:
+        generator = GENERATOR_MAP[(course, unit)]
+        selected.extend([generator(rng, actual_difficulty).record for _ in range(count - len(selected))])
+    return selected
 
 
 def update_question(updated: dict[str, Any]) -> None:
@@ -852,6 +912,10 @@ def render_problem_tab(questions: list[dict[str, Any]], analysis: dict[str, Any]
     unit = st.selectbox("単元", available_units(course), key="unit_generate")
     difficulty = st.selectbox("難易度", DIFFICULTIES, index=0)
     count = st.slider("問題数", 1, 10, 3)
+    curated_count = len(bank_candidates(course, unit, "基礎")) + len(bank_candidates(course, unit, "標準")) + len(bank_candidates(course, unit, "共通テスト風"))
+    with st.container(border=True):
+        st.write(f"高品質問題バンク: {curated_count} 問")
+        st.write("- 問題バンクを優先し、足りない分だけテンプレート生成で補います。")
     with st.form("generate_form"):
         submitted = st.form_submit_button("問題を生成する")
         if submitted:
@@ -917,6 +981,10 @@ def render_explanation(question: dict[str, Any]) -> None:
     st.write("よくあるミス")
     for item in exp["pitfalls"]:
         st.write(f"- {item}")
+    if question.get("option_notes"):
+        st.write("選択肢ごとの見方")
+        for i, note in enumerate(question["option_notes"]):
+            st.write(f"- {chr(65+i)}: {note}")
     st.write("一般化ルール")
     st.write(exp["rule"])
 
